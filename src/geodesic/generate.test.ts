@@ -300,3 +300,45 @@ describe('panel mirror pairs', () => {
     for (const t of paired) expect(d.faceTypes[t.mirrorOf!].mirrorOf).toBe(t.index)
   })
 })
+
+describe('section, force triangles', () => {
+  const cases: [number, number][] = [
+    [2, 0.6],
+    [3, 0.55],
+    [3, 0.625],
+    [4, 0.37],
+    [5, 0.71],
+  ]
+  it('every geodesic panel stays a triangle, the base stays on the plane', () => {
+    for (const [v, cut] of cases) {
+      const d = generateDome({ frequency: v, radius: 1, solid: 'icosahedron', cut, mode: 'section', triangulate: true })
+      for (const f of d.faces) expect(f.v.length).toBe(3)
+      for (const [i, h] of d.hubs.entries()) if (h.kind === 'cut') expect(d.vertices[i][2]).toBeCloseTo(d.cutZ, 9)
+    }
+  })
+  it('stays a closed surface: every strut on one or two panels, the open edge one ring', () => {
+    for (const [v, cut] of cases) {
+      const d = generateDome({ frequency: v, radius: 1, solid: 'icosahedron', cut, mode: 'section', triangulate: true })
+      const use = new Map<string, number>()
+      for (const f of d.faces)
+        f.v.forEach((a, i) => {
+          const b = f.v[(i + 1) % f.v.length]
+          const k = a < b ? `${a}-${b}` : `${b}-${a}`
+          use.set(k, (use.get(k) ?? 0) + 1)
+        })
+      expect(Math.max(...use.values())).toBeLessThanOrEqual(2)
+      expect(use.size).toBe(d.struts.length)
+      // The open edge: every node on it has exactly two open sides.
+      const open = new Map<number, number>()
+      for (const [k, n] of use) if (n === 1) for (const x of k.split('-').map(Number)) open.set(x, (open.get(x) ?? 0) + 1)
+      for (const n of open.values()) expect(n).toBe(2)
+    }
+  })
+  it('changes nothing when off, or outside section mode', () => {
+    const a = generateDome({ frequency: 3, radius: 1, solid: 'icosahedron', cut: 0.55, mode: 'section' })
+    const b = generateDome({ frequency: 3, radius: 1, solid: 'icosahedron', cut: 0.55, mode: 'exclude', triangulate: true })
+    const c = generateDome({ frequency: 3, radius: 1, solid: 'icosahedron', cut: 0.55, mode: 'exclude' })
+    expect(a.faces.some((f) => f.v.length > 3)).toBe(true)
+    expect(b.faces.length).toBe(c.faces.length)
+  })
+})

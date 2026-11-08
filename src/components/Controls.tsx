@@ -112,22 +112,46 @@ export default function Controls({ settings, set }: { settings: Settings; set: (
           {MODES.map((m) => {
             const on = settings.mode === m.id
             return (
-              <button
+              <div
                 key={m.id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => set({ mode: m.id })}
-                className={`flex w-full items-start gap-2.5 rounded-md border p-2.5 text-left transition-colors duration-200 ${on ? 'border-foreground' : 'hover:bg-accent'}`}
+                className={`rounded-md border transition-colors duration-200 ${on ? 'border-foreground' : 'hover:bg-accent'}`}
               >
-                <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${on ? 'border-foreground' : 'border-input'}`}>
-                  {on && <span className="h-2 w-2 rounded-full bg-foreground" />}
-                </span>
-                <span>
-                  <span className="block text-[13px] font-medium">{m.title}</span>
-                  <span className="block text-xs leading-snug text-muted-foreground">{m.text}</span>
-                </span>
-              </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => set({ mode: m.id })}
+                  className="flex w-full items-start gap-2.5 p-2.5 text-left"
+                >
+                  <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${on ? 'border-foreground' : 'border-input'}`}>
+                    {on && <span className="h-2 w-2 rounded-full bg-foreground" />}
+                  </span>
+                  <span>
+                    <span className="block text-[13px] font-medium">{m.title}</span>
+                    <span className="block text-xs leading-snug text-muted-foreground">{m.text}</span>
+                  </span>
+                </button>
+                {m.id === 'section' && on && (
+                  <div className="flex items-center gap-2.5 border-t px-2.5 py-2 pl-[2.125rem]">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium">Force triangles</span>
+                      <span className="block text-[11px] leading-snug text-muted-foreground">Merge a four-sided panel’s two cut points into one.</span>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={settings.triangulate}
+                      aria-label="Force triangles"
+                      onClick={() => set({ triangulate: !settings.triangulate })}
+                      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${settings.triangulate ? 'bg-foreground' : 'bg-input'}`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-background shadow-sm transition-transform duration-200 ${settings.triangulate ? 'translate-x-4' : ''}`}
+                      />
+                    </button>
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>

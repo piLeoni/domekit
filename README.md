@@ -36,6 +36,11 @@ npm run build      # type-check + production bundle in dist/
     crossing panels are clipped (to triangles or quads), and the plane gets a
     **base ring** of struts between the new **cut points**. The base is flat
     and the height is exactly the cut.
+    With `triangulate` ("Force triangles"), every clipped panel that would
+    have four or more corners has its cut points merged into one, their mean,
+    which is still on the plane: geodesic panels stay triangles and the base
+    stays flat. The struts to the merged point no longer run along their
+    parent strut.
 - Hubs within 1e-6 r of the plane count as on it, so rounding never makes
   sliver pieces. `Dome.flatCuts` lists the coefficients where a whole ring of
   hubs lies on the plane (flat base, nothing trimmed).

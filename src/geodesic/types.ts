@@ -40,6 +40,12 @@ export interface DomeParams {
    */
   cut: number
   mode: CutMode
+  /**
+   * Section mode only: in every trimmed panel that would have more than three
+   * corners, its cut points merge into one point midway between them, on the
+   * plane, so trimmed triangles stay triangles. Default false.
+   */
+  triangulate?: boolean
 }
 
 /**

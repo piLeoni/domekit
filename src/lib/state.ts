@@ -11,6 +11,8 @@ export interface Settings {
   /** Height coefficient of the cut plane: dome height over sphere diameter. */
   cut: number
   mode: CutMode
+  /** Section only: merge each trimmed panel's cut points so it stays a triangle. */
+  triangulate: boolean
   /** How it is built: the primitive alone, or a construction technique. */
   technique: Technique
   /** The technique's material dimensions, millimetres; missing keys take the defaults. */
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   unit: 'm',
   cut: 0.625,
   mode: 'exclude',
+  triangulate: false,
   technique: 'primitive',
   dims: {},
 }
@@ -74,6 +77,7 @@ export function readHash(): Settings {
     unit: UNITS.includes(unit) ? unit : DEFAULT_SETTINGS.unit,
     cut: Math.min(1, Math.max(0.001, num('h', DEFAULT_SETTINGS.cut))),
     mode: MODES[q.get('m') ?? ''] ?? DEFAULT_SETTINGS.mode,
+    triangulate: q.get('tri') === '1',
     ...readTechnique(q.get('t'), q.get('d')),
   }
 }
@@ -111,6 +115,7 @@ export function writeHash(s: Settings) {
     u: s.unit,
     h: String(Number(s.cut.toFixed(8))),
     m: MODE_KEYS[s.mode],
+    ...(s.triangulate ? { tri: '1' } : {}),
     ...writeTechnique(s),
   })
   history.replaceState(null, '', `#${q}`)

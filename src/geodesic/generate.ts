@@ -212,8 +212,61 @@ interface Corner {
   pos: Vec3
   /** The sphere hub, for a hub. */
   hub?: number
-  /** The sphere strut crossed, for a cut point. */
-  edge?: [number, number]
+  /** The sphere struts crossed, for a cut point: one, or several once merged. */
+  edges?: [number, number][]
+}
+
+/**
+ * Merge the cut points of every trimmed panel with more than three corners
+ * into one point, the mean of the merged points. All lie on the cut plane, so
+ * the mean does too and the base stays flat. A point shared by two such
+ * panels joins both merges. Panels that collapse below three corners go.
+ */
+function triangulateCut(kept: { corners: Corner[]; whole: boolean }[]) {
+  const up = new Map<string, string>()
+  const byId = new Map<string, Corner>()
+  const find = (k: string): string => {
+    while (up.get(k) !== k) k = up.get(k)!
+    return k
+  }
+  for (const { corners } of kept)
+    for (const c of corners)
+      if (c.hub === undefined && !up.has(c.id)) {
+        up.set(c.id, c.id)
+        byId.set(c.id, c)
+      }
+  for (const { corners, whole } of kept) {
+    if (whole || corners.length <= 3) continue
+    const xs = corners.filter((c) => c.hub === undefined)
+    for (const x of xs.slice(1)) {
+      const a = find(xs[0].id)
+      const b = find(x.id)
+      if (a !== b) up.set(b, a)
+    }
+  }
+  const groups = new Map<string, Corner[]>()
+  for (const [id, c] of byId) {
+    const r = find(id)
+    groups.set(r, [...(groups.get(r) ?? []), c])
+  }
+  const merged = new Map<string, Corner>()
+  for (const members of groups.values()) {
+    const m: Corner =
+      members.length === 1
+        ? members[0]
+        : {
+            id: `m${members.map((c) => c.id).sort().join('+')}`,
+            pos: scale(members.reduce((s, c) => add(s, c.pos), [0, 0, 0] as Vec3), 1 / members.length),
+            edges: members.flatMap((c) => c.edges!),
+          }
+    for (const c of members) merged.set(c.id, m)
+  }
+  for (let i = kept.length - 1; i >= 0; i--) {
+    const mapped = kept[i].corners.map((c) => merged.get(c.id) ?? c)
+    const corners = mapped.filter((c, j) => c.id !== mapped[(j + 1) % mapped.length].id)
+    if (corners.length < 3) kept.splice(i, 1)
+    else kept[i].corners = corners
+  }
 }
 
 /** Labels for the pieces cut from one parent: `B′`, or `B′1`, `B′2` when there are several. */
@@ -348,7 +401,7 @@ export function generateDome(params: DomeParams): Dome {
   const crossing = (p: number, r: number): Corner => {
     const [a, b] = p < r ? [p, r] : [r, p]
     const t = (zc - sv[a][2]) / (sv[b][2] - sv[a][2])
-    return { id: `x${a}-${b}`, pos: add(sv[a], scale(sub(sv[b], sv[a]), t)), edge: [a, b] }
+    return { id: `x${a}-${b}`, pos: add(sv[a], scale(sub(sv[b], sv[a]), t)), edges: [[a, b]] }
   }
   const kept: { corners: Corner[]; whole: boolean; family: number }[] = []
   src.faces.forEach((f, fi) => {
@@ -372,6 +425,7 @@ export function generateDome(params: DomeParams): Dome {
     }
     if (corners.length >= 3) kept.push({ corners, whole: false, family })
   })
+  if (mode === 'section' && params.triangulate) triangulateCut(kept)
 
   // ---- Nodes.
   const vertices: Vec3[] = []
@@ -408,14 +462,15 @@ export function generateDome(params: DomeParams): Dome {
         } else {
           const x = c.hub === undefined ? c : d
           const h = c.hub === undefined ? d : c
-          if (h.hub !== undefined && x.edge!.includes(h.hub)) {
+          const crossed = h.hub === undefined ? undefined : x.edges!.find((e) => e.includes(h.hub!))
+          if (crossed) {
             // A strut of the sphere, trimmed where it crosses the plane.
             const dz = Math.abs(h.pos[2] - x.pos[2])
             s = {
               a,
               b,
               kind: 'cut',
-              parent: typeOfEdge.get(edgeKey(...x.edge!))!,
+              parent: typeOfEdge.get(edgeKey(...crossed))!,
               len,
               cutAngle: Math.asin(Math.min(1, dz / len)) * DEG,
               hubDip: dipAt(h.pos, x.pos),

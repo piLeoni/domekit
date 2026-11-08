@@ -65,8 +65,9 @@ export default function App() {
         radius: settings.radius,
         cut: settings.cut,
         mode: settings.mode,
+        triangulate: settings.triangulate,
       }),
-    [settings.pattern, settings.frequency, settings.solid, settings.radius, settings.cut, settings.mode],
+    [settings.pattern, settings.frequency, settings.solid, settings.radius, settings.cut, settings.mode, settings.triangulate],
   )
 
   // A selection survives a new dome only if its family still exists.
@@ -95,7 +96,7 @@ export default function App() {
   const focus: Focus = hover ?? selected
   const pick: Pick = { focus, selected, onHover: setHover, onSelect: setSelected }
   const unit = settings.unit
-  const summary = `${settings.pattern === 'goldberg' ? 'Goldberg' : 'Geodesic'} ${dome.params.frequency}V ${dome.params.solid} · r ${len(settings.radius, unit)} · cut ${fmt(settings.cut, 3)} (${settings.mode})`
+  const summary = `${settings.pattern === 'goldberg' ? 'Goldberg' : 'Geodesic'} ${dome.params.frequency}V ${dome.params.solid} · r ${len(settings.radius, unit)} · cut ${fmt(settings.cut, 3)} (${settings.mode}${settings.mode === 'section' && settings.triangulate ? ', triangulated' : ''})`
 
   return (
     <div className="flex h-full flex-col">
