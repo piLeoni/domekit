@@ -5,8 +5,8 @@ Pick a pattern, a frequency, a radius and where to cut the sphere; DomeKit
 classifies every strut, panel and hub, then turns the dome into real parts for
 one of nine construction techniques, with drawings, cut lists and a 3D model.
 
-**Open it: https://pileoni.github.io/domekit/** (runs entirely in the browser,
-nothing to install).
+**Open it: https://domekit.pages.dev** (runs entirely in the browser, nothing
+to install; also at https://pileoni.github.io/domekit/).
 
 ![DomeKit: a 2V dome cut at 0.6, built as timber struts on steel star hubs](docs/images/timber.png)
 
@@ -52,8 +52,9 @@ npm test           # geometry, construction and share-link tests (vitest)
 npm run build      # type-check + production bundle in dist/
 ```
 
-Every push to `main` is tested, built and deployed to GitHub Pages
-(`.github/workflows/pages.yml`). The build uses relative paths, so `dist/` can
+Every push to `main` deploys twice: Cloudflare Pages builds it to
+https://domekit.pages.dev, and GitHub Actions tests, builds and deploys it to
+GitHub Pages (`.github/workflows/pages.yml`). The build uses relative paths, so `dist/` can
 be served from any folder or host.
 
 ## What it generates
