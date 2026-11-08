@@ -1,6 +1,7 @@
-# geodesic
+# DomeKit
 
-A geodesic dome generator. Pick a frequency (V), a radius and a cut height; get
+A geodesic dome generator, live at https://domekit.pietro-leoni.workers.dev
+(and https://pileoni.github.io/domekit/). Pick a frequency (V), a radius and a cut height; get
 the dome in 3D with its taxonomy: strut types, hub types, panel types, the face
 schema, and the cut list.
 

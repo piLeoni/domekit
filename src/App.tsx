@@ -7,7 +7,7 @@ import { ShareButton, ShareNoticeBar } from './components/Share'
 import Sheets from './components/Sheets'
 import Stats from './components/Stats'
 import { FaceSchema, HubTable, PanelTable, rowId, StrutSpectrum, StrutTable, type Pick } from './components/Taxonomy'
-import { Button, GeodesicIcon, MonitorIcon, MoonIcon, SectionTitle, Segmented, SunIcon, Tabs, XIcon, FocusIcon } from './components/ui'
+import { Button, GeodesicIcon, GithubIcon, MonitorIcon, MoonIcon, SectionTitle, Segmented, SunIcon, Tabs, XIcon, FocusIcon } from './components/ui'
 import Viewport from './components/Viewport'
 import { buildConstruction, generateDome, type Build, type Dome } from './geodesic'
 import { pieceColors } from './lib/palette'
@@ -106,9 +106,19 @@ export default function App() {
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
         <GeodesicIcon className="h-5 w-5" />
-        <span className="font-semibold">Geodesic</span>
+        <span className="font-semibold">DomeKit</span>
         <span className="hidden truncate text-[13px] text-muted-foreground md:block">{summary}</span>
         <div className="ml-auto flex items-center gap-2">
+          <a
+            href="https://github.com/piLeoni/domekit"
+            target="_blank"
+            rel="noreferrer"
+            title="Source code on GitHub"
+            aria-label="Source code on GitHub"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-accent"
+          >
+            <GithubIcon />
+          </a>
           <ShareButton settings={settings} view={view} />
           <Export dome={dome} unit={unit} build={build} />
           <Segmented

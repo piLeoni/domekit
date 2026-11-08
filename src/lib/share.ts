@@ -1,5 +1,6 @@
 /**
- * Share links: everything that makes the dome what it is, as one versioned
+ * Share links (the document's `app` id stays `geodesic`, so old links keep
+ * working): everything that makes the dome what it is, as one versioned
  * JSON document, deflated and base64url-encoded into the URL fragment:
  * `…/#share=<payload>`. The app reads it on open, applies it and cleans the
  * URL; from then on the dome lives in local storage.
@@ -78,12 +79,12 @@ const MIGRATIONS: Record<number, (doc: Record<string, unknown>) => Record<string
 
 /** A document (any supported version) to settings and view, every value checked. */
 export function readShareDoc(raw: unknown): Shared {
-  if (typeof raw !== 'object' || raw === null || (raw as { app?: unknown }).app !== 'geodesic') return { ok: false, reason: 'This link does not hold a Geodesic dome.' }
+  if (typeof raw !== 'object' || raw === null || (raw as { app?: unknown }).app !== 'geodesic') return { ok: false, reason: 'This link does not hold a DomeKit dome.' }
   let doc = raw as Record<string, unknown>
   const v = doc.v
   if (typeof v !== 'number' || !Number.isInteger(v)) return { ok: false, reason: 'This link has no version, so it cannot be read safely.' }
-  if (v > SHARE_VERSION) return { ok: false, reason: `This link was made with a newer version of Geodesic (format ${v}; this one reads up to ${SHARE_VERSION}). Reload the page to get the latest version.` }
-  if (v < MIN_SHARE_VERSION) return { ok: false, reason: `This link uses an old format (${v}) that Geodesic no longer opens.` }
+  if (v > SHARE_VERSION) return { ok: false, reason: `This link was made with a newer version of DomeKit (format ${v}; this one reads up to ${SHARE_VERSION}). Reload the page to get the latest version.` }
+  if (v < MIN_SHARE_VERSION) return { ok: false, reason: `This link uses an old format (${v}) that DomeKit no longer opens.` }
   for (let k = v; k < SHARE_VERSION; k++) if (MIGRATIONS[k]) doc = MIGRATIONS[k](doc)
   const dome = (doc.dome ?? {}) as Record<string, unknown>
   const build = (doc.build ?? {}) as Record<string, unknown>
