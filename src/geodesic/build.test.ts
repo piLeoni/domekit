@@ -12,7 +12,7 @@ const DOMES: DomeParams[] = [
   { frequency: 3, radius: 3, solid: 'icosahedron', pattern: 'goldberg', cut: 0.5, mode: 'include' },
   { frequency: 2, radius: 2, solid: 'octahedron', cut: 1, mode: 'exclude' },
 ]
-const TECHS: Technique[] = ['panels', 'mitre1', 'mitre2', 'frames', 'pipe', 'plates', 'timber']
+const TECHS: Technique[] = ['panels', 'folded', 'lapped', 'mitre1', 'mitre2', 'frames', 'pipe', 'plates', 'timber']
 
 /** Each directed edge once, and its reverse once: a closed, consistently oriented surface. */
 function closed(s: Solid) {
@@ -59,6 +59,9 @@ describe('constructions', () => {
           // Pipe and plate struts: two tabs and a tube. Frames: a beam per side. Star hubs: a tube and a fin per arm.
           if ((t === 'frames' || t.startsWith('mitre')) && p.name === 'Frame') expect(placed.length).toBe(p.qty * dome.faceTypes[p.index].outline.length)
           else if (t === 'timber' && p.kind === 'hub') expect(placed.length).toBe(p.qty * (1 + dome.hubTypes[p.index].valence))
+          // Sheet metal: the skin, plus a flange on every side or a lap on some.
+          else if (t === 'folded') expect(placed.length).toBe(p.qty * (1 + dome.faceTypes[p.index].outline.length))
+          else if (t === 'lapped') expect(placed.length % p.qty).toBe(0)
           else expect(placed.length).toBe(p.qty * ((t === 'pipe' || t === 'plates') && p.kind === 'strut' ? 3 : 1))
         }
       })
@@ -134,6 +137,74 @@ describe('constructions', () => {
       const node = dome.strutTypes[p.index].length * 1000
       expect(node - cut).toBeGreaterThan(70)
       expect(node - cut).toBeLessThan(72)
+    }
+  })
+
+  it('folded flanges: the two flanges on a shared edge meet back to back in the plane through the edge and the centre', () => {
+    const dome = generateDome(DOMES[0])
+    const b = buildConstruction(dome, 'folded', {}, 'm') as Build
+    const R = dome.params.radius
+    let checked = 0
+    for (const s of dome.struts) {
+      const n = normalize(cross(dome.vertices[s.a], dome.vertices[s.b]))
+      const owners = dome.faces.map((f, fi) => [f, fi] as const).filter(([f]) => f.v.includes(s.a) && f.v.includes(s.b))
+      if (owners.length < 2) continue
+      const sides = owners.map(([f, fi]) => {
+        const i = f.v.findIndex((v, k) => [v, f.v[(k + 1) % f.v.length]].sort().join() === [s.a, s.b].sort().join())
+        const fl = b.solids.find((x) => x.group === `f${fi}` && x.name.endsWith(`-flange${i + 1}`))!
+        const d = fl.solid.points.map((p) => dot(p, n))
+        // One face of each flange on the plane; the rest on one side of it.
+        expect(Math.min(...d.map(Math.abs))).toBeLessThan(1e-9 * R)
+        return Math.sign(d.reduce((x, y) => (Math.abs(y) > Math.abs(x) ? y : x), 0))
+      })
+      expect(sides[0]).toBe(-sides[1])
+      checked++
+    }
+    expect(checked).toBeGreaterThan(0)
+  })
+
+  it('lapped flanges: exactly one lap on every shared edge, none on the open edge', () => {
+    for (const params of DOMES) {
+      const dome = generateDome(params)
+      const b = buildConstruction(dome, 'lapped', {}, 'm') as Build
+      const shared = dome.struts.filter((s) => dome.faces.filter((f) => f.v.includes(s.a) && f.v.includes(s.b)).length === 2).length
+      expect(b.solids.filter((x) => /-lap\d+$/.test(x.name)).length).toBe(shared)
+    }
+  })
+
+  it('lapped both ways: two laps on every shared edge, each folded onto its neighbour, closed solids', () => {
+    for (const params of DOMES) {
+      const dome = generateDome(params)
+      const b = buildConstruction(dome, 'lapped', { both: 1 }, 'm') as Build
+      const shared = dome.struts.filter((s) => dome.faces.filter((f) => f.v.includes(s.a) && f.v.includes(s.b)).length === 2).length
+      const laps = b.solids.filter((x) => /-lap\d+(-ramp)?$/.test(x.name))
+      const mains = laps.filter((x) => /-lap\d+$/.test(x.name))
+      expect(mains.length).toBe(2 * shared)
+      for (const x of b.solids) {
+        expect(closed(x.solid)).toBe(true)
+        expect(volume(x.solid)).toBeGreaterThan(0)
+      }
+      const R = dome.params.radius
+      const plane = (fi: number) => {
+        const P = dome.faces[fi].v.map((v) => dome.vertices[v].map((c) => c * R) as [number, number, number])
+        return { p: P[0], n: normalize(cross(sub(P[1], P[0]), sub(P[2], P[0]))) }
+      }
+      for (const lap of laps) {
+        const fi = Number(lap.group.slice(1))
+        const f = dome.faces[fi]
+        const i = Number(lap.name.match(/-lap(\d+)(-ramp)?$/)![1]) - 1
+        const [a, c] = [f.v[i], f.v[(i + 1) % f.v.length]]
+        const other = dome.faces.findIndex((g, gi) => gi !== fi && g.v.includes(a) && g.v.includes(c))
+        const { p, n } = plane(other)
+        // Over the neighbour's outer face, lofted off it by at most a sheet per layer.
+        const sides = dome.faces[other].v.length
+        for (const q of lap.solid.points) {
+          const d = dot(sub(q, p), n)
+          expect(d).toBeGreaterThan(-1e-9)
+          expect(d).toBeLessThan(((sides + 1) * b.dims.thickness) / 1000 + 1e-9)
+        }
+      }
+      expect(b.dimRows.find((r) => r[0] === 'Double overlap')?.[1]).toBe('on')
     }
   })
 

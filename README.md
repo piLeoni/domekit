@@ -109,12 +109,14 @@ printed at 1:1 on its page.
 ## Construction
 
 The right column starts with a dropdown of techniques: **Primitive** (the
-geometry alone), or one of five ways to build it, each with its own material
+geometry alone), or one of nine ways to build it, each with its own material
 dimensions (millimetres, or inches for imperial domes; kept in the link):
 
 | Technique | Parts | Dimensions |
 |---|---|---|
 | **Sheet panels** | hubless sheet panels, edges cut toward the dome centre so neighbours meet flush; outer and inner face, bevel per side | sheet thickness |
+| **Folded flanges** | hubless sheet-metal panels with a flange folded down on every edge, in the plane through the edge and the centre, so neighbouring flanges sit back to back and bolt through; flat pattern with bend lines, fold angles (past 90°) and holes lined up across each edge | sheet thickness, flange depth, corner relief, bolt Ø, bolts per side |
+| **Lapped flanges** | hubless sheet-metal panels; on each shared edge one panel carries a lap bent onto its neighbour's outer face (higher over lower, like shingles; ties turn with the dome's symmetry), bolted through both; drawn without the joggle. Switch **Double overlap**: every panel runs on past each shared edge and folds onto the next, bolted on the fold line; the outline is an overall offset of the panel (no corner cuts). In 3D each run-on lofts off its neighbour (a short ramp, then raised a sheet per layer) so stacked run-ons don't cut through each other | sheet thickness, lap width, lap clearance from corners, bolt Ø, bolts per side, double-overlap switch |
 | **Flattened pipe** | tubes with flattened, drilled, bent ends, stacked on one bolt per node: cut length, hole to hole, bend at each end | tube Ø and wall, flat length, hole to end, bolt Ø |
 | **Single mitre** | one timber strut per edge, shared by its two faces; each end cut to a point (two mitres meeting on the node axis), so the struts meet tip to tip; ridged top under the decking | decking thickness, strut width and depth |
 | **Double mitre** | a frame per face, so every edge is two struts side by side, bevelled to sit face to face and bolted through; frame corners mitred (compound) | decking thickness, beam width and depth, bolt Ø, bolts per side |

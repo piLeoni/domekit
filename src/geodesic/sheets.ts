@@ -837,7 +837,7 @@ function constructionOverview(ctx: PageCtx, build: Build, title: string) {
     kind: '',
     rows: [
       ['Built with', ''],
-      ...build.dimRows.map(([k, v]) => [k, imperialUnit(build.unit) ? `${(v / 25.4).toFixed(3)} in` : `${v} mm`] as [string, string]),
+      ...build.dimRows,
       ...(build.hardware.length ? ([['Hardware', '']] as [string, string][]) : []),
       ...build.hardware.map((h) => [`${h.qty} × ${h.label}`, h.spec.split(',')[0]] as [string, string]),
     ],

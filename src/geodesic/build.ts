@@ -12,7 +12,7 @@ import { toStep } from './step'
 import type { Dome } from './types'
 import { add, cross, distance, dot, length, normalize, scale, sub, type Vec3 } from './vec'
 
-export type Technique = 'primitive' | 'panels' | 'mitre1' | 'mitre2' | 'frames' | 'pipe' | 'plates' | 'timber'
+export type Technique = 'primitive' | 'panels' | 'folded' | 'lapped' | 'mitre1' | 'mitre2' | 'frames' | 'pipe' | 'plates' | 'timber'
 
 export interface DimSpec {
   key: string
@@ -21,6 +21,8 @@ export interface DimSpec {
   mm: number
   min: number
   max: number
+  /** A switch, not a size: 0 off, 1 on. */
+  toggle?: boolean
 }
 
 export interface TechniqueSpec {
@@ -50,6 +52,31 @@ export const TECHNIQUES: TechniqueSpec[] = [
     name: 'Sheet panels',
     text: 'Hubless, no frame: thick sheet (plywood, foam board, polycarbonate) cut to the panels and joined edge to edge. Every edge is bevelled toward the dome centre, so neighbours meet flush.',
     dims: [{ key: 'thickness', label: 'Sheet thickness', mm: 18, min: 0.5, max: 300 }],
+  },
+  {
+    id: 'folded',
+    name: 'Folded flanges',
+    text: 'Hubless, one sheet-metal panel per face with a flange folded down on every edge. Each flange lies in the plane through its edge and the dome centre, so neighbouring flanges sit back to back and bolt through; all the flanges at a node meet on the node axis, so the corners only need a small relief.',
+    dims: [
+      { key: 'thickness', label: 'Sheet thickness', mm: 1.5, min: 0.3, max: 12 },
+      { key: 'flange', label: 'Flange depth', mm: 40, min: 5, max: 400 },
+      { key: 'relief', label: 'Corner relief', mm: 5, min: 0, max: 200 },
+      { key: 'bolt', label: 'Bolt Ø', mm: 6, min: 2, max: 30 },
+      { key: 'perSide', label: 'Bolts per side', mm: 3, min: 1, max: 30 },
+    ],
+  },
+  {
+    id: 'lapped',
+    name: 'Lapped flanges',
+    text: 'Hubless, one sheet-metal panel per face. On every shared edge one panel carries a lap, bent to lie over its neighbour’s outer face and bolted through both; the higher panel laps over the lower, like shingles, so water runs off. (Drawn without the joggle: the lap sits one sheet proud.) With a double overlap, every panel instead runs on past each edge and folds over the next, the outline an overall offset of the panel, so each edge is a double overlap, bolted on the edge line itself. (In 3D each run-on lofts off its neighbour, raised a sheet per layer, where in reality the sheet would flex.)',
+    dims: [
+      { key: 'thickness', label: 'Sheet thickness', mm: 1.5, min: 0.3, max: 12 },
+      { key: 'lap', label: 'Lap width', mm: 40, min: 5, max: 400 },
+      { key: 'relief', label: 'Lap clear of corners', mm: 15, min: 0, max: 400 },
+      { key: 'bolt', label: 'Bolt Ø', mm: 6, min: 2, max: 30 },
+      { key: 'perSide', label: 'Bolts per side', mm: 3, min: 1, max: 30 },
+      { key: 'both', label: 'Double overlap', mm: 0, min: 0, max: 1, toggle: true },
+    ],
   },
   {
     id: 'mitre1',
@@ -170,8 +197,8 @@ export interface PlacedSolid {
 export interface Build {
   technique: Technique
   dims: Record<string, number>
-  /** The dimensions with their names, for notes: [label, mm]. */
-  dimRows: [string, number][]
+  /** The dimensions with their names, for notes: [label, value written out]. */
+  dimRows: [string, string][]
   unit: LengthUnit
   parts: PartType[]
   hardware: Hardware[]
@@ -364,8 +391,9 @@ export function buildConstruction(dome: Dome, technique: Technique, dimsIn: Reco
   if (technique === 'primitive') return null
   const dims = { ...defaultDims(technique), ...dimsIn }
   const mm = 1 / TO_MM[unit]
-  const out: Build = { technique, dims, dimRows: techniqueSpec(technique).dims.map((d) => [d.label, dims[d.key]]), unit, parts: [], hardware: [], solids: [], warnings: [] }
+  const out: Build = { technique, dims, dimRows: techniqueSpec(technique).dims.map((d) => [d.label, d.toggle ? (dims[d.key] >= 0.5 ? 'on' : 'off') : smallText(dims[d.key], unit)]), unit, parts: [], hardware: [], solids: [], warnings: [] }
   if (technique === 'panels') panels(dome, dims, unit, mm, out)
+  else if (technique === 'folded' || technique === 'lapped') sheetMetal(dome, technique, dims, unit, mm, out)
   else if (technique === 'mitre1') singles(dome, dims, unit, mm, out)
   else if (technique === 'frames' || technique === 'mitre2') frames(dome, dims, unit, mm, out, technique === 'frames')
   else if (technique === 'timber') timber(dome, dims, unit, mm, out)
@@ -425,6 +453,383 @@ const angleBetween = (a: Vec3, b: Vec3) => (Math.acos(Math.max(-1, Math.min(1, d
 
 /** Blade tilt of a cut on plane normal `m`, for a board whose face has normal `n`: 0 when the cut is square to the face. */
 const tiltFrom = (m: Vec3, n: Vec3) => (Math.asin(Math.min(1, Math.abs(dot(normalize(m), normalize(n))))) * 180) / Math.PI
+
+/* ---------------------------------------------------------------- */
+/*  Sheet metal: folded or lapped flanges                            */
+/* ---------------------------------------------------------------- */
+
+/**
+ * One side of a sheet-metal panel, in that side's own coordinates: `a` along
+ * the side from its first corner, `b` away from the panel (out across the
+ * bend, positive) or into it (negative).
+ */
+interface MetalSide {
+  strut: string
+  /** The flap past the bend, from the bend line out and back; null for a plain edge. */
+  flap: P2[] | null
+  /** Fold from flat, degrees, for a flap. */
+  fold: number
+  role: 'flange' | 'lap' | 'under' | 'cross' | 'open'
+  /** Hole centres, flap holes with b > 0, holes in the panel itself with b < 0. */
+  holes: P2[]
+  /** Bend line (or edge) length. */
+  len: number
+}
+
+/** A sheet-metal panel's flat pattern: the base outline with every flap unfolded flat against its side. */
+function flatPattern(base3: Vec3[], nf: Vec3, sides: MetalSide[]) {
+  const B = layFlat(base3, nf).outline
+  const m = B.length
+  const cx = B.reduce((a, p) => a + p[0], 0) / m
+  const cy = B.reduce((a, p) => a + p[1], 0) / m
+  const frames = B.map((p, i) => {
+    const q = B[(i + 1) % m]
+    const e = P2n([q[0] - p[0], q[1] - p[1]])
+    let o: P2 = [-e[1], e[0]]
+    const mid: P2 = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]
+    if (o[0] * (mid[0] - cx) + o[1] * (mid[1] - cy) < 0) o = [-o[0], -o[1]]
+    return { p, e, o }
+  })
+  const at = (i: number, [a, b]: P2): P2 => {
+    const f = frames[i]
+    return [f.p[0] + f.e[0] * a + f.o[0] * b, f.p[1] + f.e[1] * a + f.o[1] * b]
+  }
+  const outline: P2[] = []
+  const bends: [P2, P2][] = []
+  const holes: P2[] = []
+  // Run-ons both ways: an overall offset outline, one point per corner where
+  // the offset sides meet (a run-on's mitre, or the corner itself).
+  const offset = sides.some((s) => s.role === 'cross')
+  sides.forEach((s, i) => {
+    const prev = sides[(i + m - 1) % m]
+    if (!offset) outline.push(B[i])
+    else if (s.flap) outline.push(at(i, s.flap[1]))
+    else if (prev.flap) outline.push(at((i + m - 1) % m, prev.flap[2]))
+    else outline.push(B[i])
+    if (s.flap) {
+      if (!offset) outline.push(...s.flap.map((q) => at(i, q)))
+      bends.push([at(i, s.flap[0]), at(i, s.flap[s.flap.length - 1])])
+    }
+    holes.push(...s.holes.map((h) => at(i, h)))
+  })
+  return { outline, bends, holes, base: B, at }
+}
+
+function sheetMetal(dome: Dome, technique: 'folded' | 'lapped', dims: Record<string, number>, unit: LengthUnit, mm: number, out: Build) {
+  const folded = technique === 'folded'
+  /** Lapped, both ways: every panel runs on flat past each shared edge, the two crossing on the edge line. */
+  const both = !folded && dims.both >= 0.5
+  const t = dims.thickness * mm
+  const reach = (folded ? dims.flange : dims.lap) * mm
+  const c = dims.relief * mm
+  const n = Math.max(1, Math.round(dims.perSide))
+  const hole = dims.bolt * mm
+  const R = dome.params.radius
+  const P = dome.vertices.map((v) => scale(v, R))
+  const radial = dome.vertices.map((v) => normalize(v))
+  const strutOf = new Map(dome.struts.map((s) => [strutKey(s.a, s.b), s.type]))
+  const strutLabel = (a: number, b: number) => dome.strutTypes[strutOf.get(strutKey(a, b)) ?? 0]?.label ?? '?'
+  const edgePlane = edgePlanes(dome)
+
+  // Which faces share each edge, and each face's plane.
+  const facesOf = new Map<string, number[]>()
+  dome.faces.forEach((f, fi) => f.v.forEach((v, i) => {
+    const k = strutKey(v, f.v[(i + 1) % f.v.length])
+    facesOf.set(k, [...(facesOf.get(k) ?? []), fi])
+  }))
+  const normal = dome.faces.map((f) => normalize(cross(sub(P[f.v[1]], P[f.v[0]]), sub(P[f.v[2]], P[f.v[0]]))))
+  const centroid = dome.faces.map((f) => scale(f.v.reduce((a, v) => add(a, P[v]), [0, 0, 0] as Vec3), 1 / f.v.length))
+  /**
+   * Lapped: on a shared edge, the higher panel laps over the lower. At equal
+   * heights, the one counter-clockwise seen from above, so the pattern turns
+   * with the dome's symmetry instead of following face numbering.
+   */
+  const lapOwner = (k: string) => {
+    const fs = facesOf.get(k)!
+    if (fs.length < 2) return -1
+    const [p, q] = fs
+    const dz = centroid[p][2] - centroid[q][2]
+    if (Math.abs(dz) > 1e-9 * R) return dz > 0 ? p : q
+    const turn = centroid[q][0] * centroid[p][1] - centroid[q][1] * centroid[p][0]
+    return turn > 0 ? p : q
+  }
+  /** Bolt positions along a side of `len`, clear of the ends by `end`. */
+  const along = (len: number, end: number) => Array.from({ length: n }, (_, k) => end + ((len - 2 * end) * (k + 1)) / (n + 1))
+
+  let bolts = 0
+  let tooShort = false
+  let holeTooBig = false
+  const bolted = new Set<string>()
+  const faceSides: MetalSide[][] = []
+  const faceBase: Vec3[][] = []
+
+  dome.faces.forEach((f, fi) => {
+    const m = f.v.length
+    const nf = normal[fi]
+    const O = f.v.map((v) => P[v])
+    const label = dome.faceTypes[f.type].label
+    const group = `f${fi}`
+    const sides: MetalSide[] = []
+    if (folded) {
+      const planes = f.v.map((v, i) => edgePlane(v, f.v[(i + 1) % m]))
+      const face: Plane = { n: nf, d: dot(nf, O[0]) - t }
+      const I = O.map((o, i) => meet(face, planes[(i + m - 1) % m], planes[i]) ?? sub(o, scale(nf, t)))
+      out.solids.push({ part: null, material: 'steel', kind: 'panel', index: f.type, name: `${label}-${fi + 1}`, group, solid: slab(O, I) })
+      faceBase.push(I)
+      for (let i = 0; i < m; i++) {
+        const j = (i + 1) % m
+        const [va, vb] = [f.v[i], f.v[j]]
+        const E = planes[i]
+        const L = distance(I[i], I[j])
+        const e = normalize(sub(I[j], I[i]))
+        // In the flange's plane, away from the skin: toward the dome centre.
+        let w = cross(E.n, e)
+        if (dot(w, radial[va]) > 0) w = scale(w, -1)
+        const loc = (q: Vec3): P2 => [dot(sub(q, I[i]), e), dot(sub(q, I[i]), w)]
+        const q0 = add(I[i], scale(e, c))
+        const q1 = sub(I[j], scale(e, c))
+        const q2 = sub(sub(I[j], scale(radial[vb], reach)), scale(e, c))
+        const q3 = add(sub(I[i], scale(radial[va], reach)), scale(e, c))
+        const flap = [q0, q3, q2, q1].map(loc)
+        if (flap[3][0] - flap[0][0] < hole * 2 || flap[2][0] - flap[1][0] < hole * 2) tooShort = true
+        // Holes from the shared edge, so both flanges on it line up.
+        const depth = t + reach / 2
+        const ends = [sub(P[va], scale(radial[va], depth)), sub(P[vb], scale(radial[vb], depth))]
+        const span = distance(ends[0], ends[1])
+        const H = along(span, Math.max(c + hole * 1.5, span * 0.08)).map((x) => add(ends[0], scale(normalize(sub(ends[1], ends[0])), x)))
+        if (hole >= reach * 0.8) holeTooBig = true
+        const fr = { o: I[i], u: e, v: w, n: cross(e, w) }
+        const [z0, z1] = dot(fr.n, E.n) > 0 ? [0, t] : [-t, 0]
+        out.solids.push({
+          part: null, material: 'steel', kind: 'panel', index: f.type, name: `${label}-${fi + 1}-flange${i + 1}`, group,
+          solid: prism(fr, flap, H.map((h) => circle2(loc(h), hole / 2, 12)), z0, z1),
+        })
+        // Fold from flat: the skin running out across the edge, against the flange running down.
+        let sOut = normalize(cross(e, nf))
+        if (dot(sOut, sub(scale(add(I[i], I[j]), 0.5), centroid[fi])) < 0) sOut = scale(sOut, -1)
+        const k = strutKey(va, vb)
+        const shared = facesOf.get(k)!.length > 1
+        if (shared && !bolted.has(k)) {
+          bolted.add(k)
+          H.forEach((h, b) => out.solids.push({ part: null, material: 'bolt', kind: null, index: -1, name: `bolt-${k}-${b + 1}`, group: `e${k}`, solid: cylinder(sub(h, scale(E.n, t + hole)), add(h, scale(E.n, t + hole)), hole / 2, 10) }))
+          bolts += H.length
+        }
+        sides.push({ strut: strutLabel(va, vb), flap, fold: angleBetween(sOut, w), role: shared ? 'flange' : 'open', holes: H.map(loc), len: L })
+      }
+    } else {
+      const inner = O.map((o) => sub(o, scale(nf, t)))
+      out.solids.push({ part: null, material: 'steel', kind: 'panel', index: f.type, name: `${label}-${fi + 1}`, group, solid: slab(O, inner) })
+      faceBase.push(O)
+      // Both ways: every shared side runs on by the lap width; the run-ons
+      // meet in a mitre past each corner (an offset outline), so there is no
+      // gap at the corners. Sides on the open edge stay put.
+      const runOn = f.v.map((v, i) => (facesOf.get(strutKey(v, f.v[(i + 1) % m]))!.length > 1 ? reach : 0))
+      const outward = f.v.map((_, i) => {
+        const e = normalize(sub(O[(i + 1) % m], O[i]))
+        const w = normalize(cross(nf, e))
+        return { e, w: dot(w, sub(O[i], centroid[fi])) < 0 ? scale(w, -1) : w }
+      })
+      /** Where side p's offset line meets side q's, in side p's coordinates (along, out). */
+      const mitre = (p: number, q: number): P2 => {
+        const A = add(O[p], scale(outward[p].w, runOn[p]))
+        const Bq = add(O[q], scale(outward[q].w, runOn[q]))
+        // A + s·e_p on side q's offset line: (A + s·e_p − Bq)·w_q = 0.
+        const den = dot(outward[p].e, outward[q].w)
+        const sAlong = Math.abs(den) < 1e-12 ? 0 : -dot(sub(A, Bq), outward[q].w) / den
+        const M = add(A, scale(outward[p].e, sAlong))
+        return [dot(sub(M, O[p]), outward[p].e), dot(sub(M, O[p]), outward[p].w)]
+      }
+      for (let i = 0; i < m; i++) {
+        const j = (i + 1) % m
+        const [va, vb] = [f.v[i], f.v[j]]
+        const k = strutKey(va, vb)
+        const L = distance(O[i], O[j])
+        const e = normalize(sub(O[j], O[i]))
+        const owner = lapOwner(k)
+        const other = facesOf.get(k)!.find((x) => x !== fi)
+        if (owner < 0 || other === undefined) {
+          sides.push({ strut: strutLabel(va, vb), flap: null, fold: 0, role: 'open', holes: [], len: L })
+          continue
+        }
+        // The lap, in the lower panel's plane: a strip inside its outline.
+        // Both ways: always the neighbour.
+        const lower = both || owner === fi ? other : fi
+        const nB = normal[lower]
+        let wB = normalize(cross(nB, e))
+        if (dot(wB, sub(centroid[lower], O[i])) < 0) wB = scale(wB, -1)
+        const locB = (q: Vec3): P2 => [dot(sub(q, O[i]), e), dot(sub(q, O[i]), wB)]
+        const Bpts = dome.faces[lower].v.map((v) => locB(P[v]))
+        const bc: P2 = [Bpts.reduce((a, p) => a + p[0], 0) / Bpts.length, Bpts.reduce((a, p) => a + p[1], 0) / Bpts.length]
+        let strip: P2[] = [[c, 0], [L - c, 0], [L - c, reach], [c, reach]]
+        Bpts.forEach((p, q) => {
+          const r = Bpts[(q + 1) % Bpts.length]
+          let [nx, ny] = [-(r[1] - p[1]), r[0] - p[0]]
+          if (nx * (bc[0] - p[0]) + ny * (bc[1] - p[1]) < 0) [nx, ny] = [-nx, -ny]
+          strip = clip2(strip, nx, ny, nx * p[0] + ny * p[1] - 1e-12)
+        })
+        const xs = along(L, c + hole * 1.5)
+        if (both) {
+          // The run-on: from the edge out to the mitres at both ends, folded onto the neighbour's outer face.
+          const flap: P2[] = [[0, 0], mitre(i, (i + m - 1) % m), mitre(i, j), [L, 0]]
+          // In 3D the run-on lofts away from the neighbour instead of lying on it:
+          // a short ramp off the fold, then parallel to the neighbour, raised
+          // one sheet per edge of that panel, so the run-ons landing on one
+          // panel stack instead of cutting through each other.
+          const Bv = dome.faces[lower].v
+          const rank = Bv.findIndex((v, q) => strutKey(v, Bv[(q + 1) % Bv.length]) === k)
+          const lift = t * (1 + Math.max(0, rank))
+          const ramp = Math.min(reach * 0.4, 8 * lift)
+          const outwardOf = (fr: { u: Vec3; v: Vec3 }): [number, number] => (dot(cross(fr.u, fr.v), nB) > 0 ? [0, t] : [-t, 0])
+          const rampPart = clip2(flap, 0, -1, -ramp)
+          const flatPart = clip2(flap, 0, 1, ramp)
+          if (rampPart.length >= 3) {
+            const v = normalize(add(scale(wB, ramp), scale(nB, lift)))
+            const k2 = Math.hypot(ramp, lift) / ramp
+            const fr = { o: O[i], u: e, v, n: cross(e, v) }
+            const [z0, z1] = outwardOf(fr)
+            out.solids.push({ part: null, material: 'steel', kind: 'panel', index: f.type, name: `${label}-${fi + 1}-lap${i + 1}-ramp`, group, solid: prism(fr, rampPart.map(([a, b]): P2 => [a, b * k2]), [], z0, z1) })
+          }
+          if (flatPart.length >= 3) {
+            const fr = { o: add(O[i], scale(nB, lift)), u: e, v: wB, n: cross(e, wB) }
+            const [z0, z1] = outwardOf(fr)
+            out.solids.push({ part: null, material: 'steel', kind: 'panel', index: f.type, name: `${label}-${fi + 1}-lap${i + 1}`, group, solid: prism(fr, flatPart, [], z0, z1) })
+          }
+          // Bolts on the edge line, through both sheets at the fold.
+          if (!bolted.has(k)) {
+            bolted.add(k)
+            const axis = normalize(add(nf, nB))
+            for (const a of xs) {
+              const x = add(O[i], scale(e, a))
+              out.solids.push({ part: null, material: 'bolt', kind: null, index: -1, name: `bolt-${k}-${bolts}`, group: `e${k}`, solid: cylinder(add(x, scale(axis, 2 * t + hole)), sub(x, scale(axis, t + hole)), hole / 2, 10) })
+              bolts++
+            }
+          }
+          sides.push({ strut: strutLabel(va, vb), flap, fold: angleBetween(nf, nB), role: 'cross', holes: xs.map((x) => [x, 0]), len: L })
+          continue
+        }
+        const holes2: P2[] = xs.map((x) => [x, reach / 2])
+        if (L - 2 * c < hole * 4 || strip.length < 3) tooShort = true
+        if (hole >= reach * 0.8) holeTooBig = true
+        if (owner === fi && strip.length >= 3) {
+          // Order the strip from the bend line out and back, starting at its first end.
+          const onBend = (p: P2) => Math.abs(p[1]) < 1e-9 * R
+          let s0 = strip.reduce((b, p, q) => (onBend(p) && (!onBend(strip[b]) || p[0] < strip[b][0]) ? q : b), 0)
+          let ordered = [...strip.slice(s0), ...strip.slice(0, s0)]
+          if (onBend(ordered[1])) ordered = [ordered[0], ...ordered.slice(1).reverse()]
+          s0 = 0
+          const fr = { o: O[i], u: e, v: wB, n: cross(e, wB) }
+          const [z0, z1] = dot(fr.n, nB) > 0 ? [0, t] : [-t, 0]
+          const inside = holes2.filter((h) => strip.length >= 3 && h[1] + hole / 2 < reach)
+          out.solids.push({
+            part: null, material: 'steel', kind: 'panel', index: f.type, name: `${label}-${fi + 1}-lap${i + 1}`, group,
+            solid: prism(fr, ordered, inside.map((h) => circle2(h, hole / 2, 12)), z0, z1),
+          })
+          if (!bolted.has(k)) {
+            bolted.add(k)
+            for (const [a, b] of inside) {
+              const x = add(add(O[i], scale(e, a)), scale(wB, b))
+              out.solids.push({ part: null, material: 'bolt', kind: null, index: -1, name: `bolt-${k}-${bolts}`, group: `e${k}`, solid: cylinder(add(x, scale(nB, 2 * t + hole)), sub(x, scale(nB, t + hole)), hole / 2, 10) })
+              bolts++
+            }
+          }
+          // Fold from flat: this panel running on across the edge, against the lap on the neighbour.
+          sides.push({ strut: strutLabel(va, vb), flap: ordered, fold: angleBetween(nf, nB), role: 'lap', holes: holes2, len: L })
+        } else {
+          // The neighbour laps over this side: holes inside it, mirrored onto this panel.
+          sides.push({ strut: strutLabel(va, vb), flap: null, fold: 0, role: 'under', holes: holes2.map(([a, b]) => [a, -b]), len: L })
+        }
+      }
+    }
+    faceSides.push(sides)
+  })
+  if (tooShort) out.warnings.push(folded ? 'Some flanges are too short between their corner reliefs for the bolts: reduce the corner relief or the bolt size.' : 'Some laps are too short between the corners for the bolts: reduce the clearance or the bolt size.')
+  if (holeTooBig) out.warnings.push(`Bolt holes nearly as wide as the ${folded ? 'flange' : 'lap'}: use a deeper ${folded ? 'flange' : 'lap'} or a smaller bolt.`)
+
+  // Part types: one per face type and (lapped) pattern of laps around it.
+  const sig = (sides: MetalSide[]) => {
+    // A folded flange is the same on an open edge; laps change the part.
+    const keys = sides.map((x) => `${x.strut}:${folded ? '' : x.role}`)
+    let best = ''
+    for (let r = 0; r < keys.length; r++) {
+      const k = [...keys.slice(r), ...keys.slice(0, r)].join('|')
+      if (!best || k < best) best = k
+    }
+    return best
+  }
+  const byType = new Map<number, Map<string, number[]>>()
+  dome.faces.forEach((f, fi) => {
+    const g = byType.get(f.type) ?? new Map<string, number[]>()
+    const k = sig(faceSides[fi])
+    g.set(k, [...(g.get(k) ?? []), fi])
+    byType.set(f.type, g)
+  })
+  const roleWord = { flange: 'flange', open: 'open', lap: 'over', under: 'under', cross: 'both' }
+  for (const ft of dome.faceTypes) {
+    const groups = byType.get(ft.index)
+    if (!groups) continue
+    ;[...groups.values()].forEach((members, gi) => {
+      const fi = members[0]
+      const sides = faceSides[fi]
+      const label = groups.size > 1 ? `${ft.label}${String.fromCharCode(97 + gi)}` : ft.label
+      const pat = flatPattern(faceBase[fi], normal[fi], sides)
+      const xs = pat.outline.map((p) => p[0])
+      const ys = pat.outline.map((p) => p[1])
+      const folds = sides.filter((x) => x.flap).map((x) => x.fold)
+      const part = out.parts.length
+      out.parts.push({
+        id: `panel-${fileSafe(label)}`,
+        kind: 'panel',
+        index: ft.index,
+        label,
+        name: 'Panel',
+        qty: members.length,
+        spec: `${smallText(dims.thickness, unit)} sheet · ${folded ? 'flanges' : `${folds.length} lap${folds.length === 1 ? '' : 's'}`}${folds.length ? ` · folds ${deg(Math.min(...folds))}${Math.max(...folds) - Math.min(...folds) > 0.05 ? `–${deg(Math.max(...folds))}` : ''}` : ''}`,
+        facts: {
+          title: label,
+          kind: `Panel · ${sides.length} sides · ${smallText(dims.thickness, unit)} sheet${folded ? ', folded flanges' : ', lapped'}`,
+          rows: [
+            ['Quantity', String(members.length)],
+            ['Outer face area', `${ft.area.toFixed(4)} ${unit}²`],
+            ['Flat pattern', 'seen from outside; no bend allowance'],
+            ['Fold', 'from flat, along each dashed bend line'],
+            ...(both ? ([['Outline', 'an overall offset; the corners stretch as the run-ons fold']] as [string, string][]) : []),
+            ...(folded || both ? [] : ([['Lap', 'over: onto the neighbour; under: below it']] as [string, string][])),
+            [folded ? 'Flange depth' : 'Lap width', smallText(folded ? dims.flange : dims.lap, unit)],
+          ],
+          table: {
+            head: folded ? ['Side', 'Strut', 'Bend line', 'Fold', 'Holes'] : ['Side', 'Strut', 'Edge', 'Lap', 'Fold', 'Holes'],
+            rows: sides.map((x, i) => [String(i + 1), x.strut, smallText(x.len / mm, unit), ...(folded ? [] : [roleWord[x.role]]), x.flap ? deg(x.fold) : '—', String(x.holes.length)]),
+          },
+        },
+        size: { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) },
+        draw: (d, k, th) => {
+          const K = ([x, y]: P2): P2 => [x * k, y * k]
+          d.poly('outline', pat.outline.map(K))
+          for (const [a, b] of pat.bends) d.line('marks', K(a), K(b), { dash: true })
+          for (const h of pat.holes) d.circle('outline', K(h), (hole / 2) * k)
+          const B = pat.base.map(K)
+          const cx = B.reduce((a, p) => a + p[0], 0) / B.length
+          const cy = B.reduce((a, p) => a + p[1], 0) / B.length
+          d.text([cx, cy], label, th * 1.8, { anchor: 'middle', middle: true, weight: 700 })
+          sides.forEach((x, i) => {
+            const p = B[i]
+            const q = B[(i + 1) % B.length]
+            const [dx, dy] = [q[0] - p[0], q[1] - p[1]]
+            const L = Math.hypot(dx, dy)
+            const mid = K(pat.at(i, [x.len / 2, -th * 1.6 / k]))
+            let ang = (Math.atan2(dy, dx) * 180) / Math.PI
+            if (ang > 90 || ang < -90) ang += 180
+            const what = x.flap ? `fold ${deg(x.fold)}${x.role === 'cross' ? ', bolts on the fold' : ''}` : x.role === 'under' ? 'lapped under' : 'plain'
+            d.text(mid, `${x.strut} · ${smallText(L / k / mm, unit)} · ${what}`, th * 0.85, { anchor: 'middle', middle: true, rotate: ang, tone: 'muted' })
+          })
+        },
+      })
+      for (const fj of members) for (const ps of out.solids) if (ps.group === `f${fj}` && ps.kind === 'panel') ps.part = part
+    })
+  }
+  const boltLen = boltLength((folded || both ? 2 : 3) * dims.thickness + 2 * dims.bolt, unit)
+  if (bolts) out.hardware.push({ label: 'Bolt', spec: `Ø ${smallText(dims.bolt, unit)} × ${smallText(boltLen, unit)}, nut, 2 washers`, qty: bolts })
+}
 
 function panels(dome: Dome, dims: Record<string, number>, unit: LengthUnit, mm: number, out: Build) {
   const T = dims.thickness * mm

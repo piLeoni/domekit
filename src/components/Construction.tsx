@@ -10,7 +10,7 @@ import { NumberField, Select } from './ui'
 const GROUPS: { label: string; ids: Technique[] }[] = [
   { label: 'Geometry', ids: ['primitive'] },
   { label: 'Hubless timber', ids: ['mitre1', 'mitre2', 'frames'] },
-  { label: 'Hubless sheet', ids: ['panels'] },
+  { label: 'Hubless sheet', ids: ['panels', 'folded', 'lapped'] },
   { label: 'Hub and strut', ids: ['timber', 'pipe', 'plates'] },
 ]
 
@@ -68,7 +68,7 @@ export function TechniquePicker({
               <span className={`ease inline-block text-muted-foreground ${open ? 'rotate-90' : ''}`}>›</span>
               Dimensions
               <span className="font-normal text-muted-foreground">
-                {spec.dims.length} · {inch ? 'in' : 'mm'}
+                {spec.dims.filter((d) => !d.toggle).length} · {inch ? 'in' : 'mm'}
               </span>
             </button>
             {changed && (
@@ -79,7 +79,24 @@ export function TechniquePicker({
           </div>
           {open && (
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            {spec.dims.map((d) => (
+            {spec.dims.map((d) =>
+              d.toggle ? (
+                <div key={d.key} className="col-span-2 flex items-center gap-2.5 pt-1">
+                  <span className="min-w-0 flex-1 text-xs text-muted-foreground">{d.label}</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={values[d.key] >= 0.5}
+                    aria-label={d.label}
+                    onClick={() => onChange(technique, { ...dims, [d.key]: values[d.key] >= 0.5 ? 0 : 1 })}
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${values[d.key] >= 0.5 ? 'bg-foreground' : 'bg-input'}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-background shadow-sm transition-transform duration-200 ${values[d.key] >= 0.5 ? 'translate-x-4' : ''}`}
+                    />
+                  </button>
+                </div>
+              ) : (
               <label key={d.key} className="space-y-1">
                 <span className="block truncate text-xs text-muted-foreground" title={d.label}>
                   {d.label}
@@ -93,7 +110,8 @@ export function TechniquePicker({
                   onCommit={(v) => onChange(technique, { ...dims, [d.key]: inch ? v * 25.4 : v })}
                 />
               </label>
-            ))}
+              ),
+            )}
           </div>
           )}
         </div>
