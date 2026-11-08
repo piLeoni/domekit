@@ -30,7 +30,8 @@ export function TechniquePicker({
   dims: Record<string, number>
   unit: Unit
   warnings: string[]
-  onChange: (technique: Technique, dims: Record<string, number>) => void
+  /** A new technique keeps the dimensions last set for it (`dims` undefined); otherwise `dims` replace them. */
+  onChange: (technique: Technique, dims?: Record<string, number>) => void
 }) {
   const spec = techniqueSpec(technique)
   const values = { ...defaultDims(technique), ...dims }
@@ -41,7 +42,7 @@ export function TechniquePicker({
     <div className="space-y-3 border-b p-3">
       <label className="flex items-center gap-3">
         <span className="shrink-0 text-xs font-medium">Construction</span>
-        <Select className="w-full" value={technique} aria-label="Construction technique" onChange={(e) => onChange(e.target.value as Technique, {})}>
+        <Select className="w-full" value={technique} aria-label="Construction technique" onChange={(e) => onChange(e.target.value as Technique)}>
           {GROUPS.map((g) => (
             <optgroup key={g.label} label={g.label}>
               {g.ids.map((id) => (

@@ -254,6 +254,15 @@ export const SunIcon = icon(
   </>,
 )
 export const MoonIcon = icon(<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />)
+export const ShareIcon = icon(
+  <>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98" />
+  </>,
+)
+export const CheckIcon = icon(<path d="M20 6 9 17l-5-5" />)
 export const MonitorIcon = icon(
   <>
     <rect width="20" height="14" x="2" y="3" rx="2" />

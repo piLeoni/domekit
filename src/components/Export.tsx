@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { buildStep, partsCsv, toCutList, toHubList, toJson, toObj, type Build, type Dome } from '../geodesic'
 import type { Unit } from '../lib/units'
 import { fileStem, saveSheets } from './Sheets'
@@ -13,9 +12,8 @@ function save(name: string, text: string, type: string) {
   URL.revokeObjectURL(url)
 }
 
-/** Downloads and the share link, in one menu. */
+/** Downloads, in one menu. */
 export default function Export({ dome, unit, build }: { dome: Dome; unit: Unit; build: Build | null }) {
-  const [copied, setCopied] = useState(false)
   const p = dome.params
   const stem = `dome-${p.frequency}v-${p.solid === 'octahedron' ? 'octa' : 'icosa'}-${String(p.radius).replace('.', '_')}${unit}-${p.mode}`
   return (
@@ -60,24 +58,6 @@ export default function Export({ dome, unit, build }: { dome: Dome; unit: Unit; 
           </MenuItem>
           <MenuItem hint=".json" onClick={() => (save(`${stem}.json`, toJson(dome), 'application/json'), close())}>
             All data
-          </MenuItem>
-          <div className="my-1 border-t" />
-          <MenuItem
-            hint={copied ? 'copied' : undefined}
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(location.href)
-                setCopied(true)
-                setTimeout(() => {
-                  setCopied(false)
-                  close()
-                }, 900)
-              } catch {
-                close()
-              }
-            }}
-          >
-            Copy link
           </MenuItem>
         </>
       )}

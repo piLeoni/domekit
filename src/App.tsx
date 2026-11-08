@@ -1,7 +1,9 @@
+import { useAtom } from 'jotai'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { PartsList, TechniquePicker } from './components/Construction'
 import Controls from './components/Controls'
 import Export from './components/Export'
+import { ShareButton, ShareNoticeBar } from './components/Share'
 import Sheets from './components/Sheets'
 import Stats from './components/Stats'
 import { FaceSchema, HubTable, PanelTable, rowId, StrutSpectrum, StrutTable, type Pick } from './components/Taxonomy'
@@ -9,22 +11,23 @@ import { Button, GeodesicIcon, MonitorIcon, MoonIcon, SectionTitle, Segmented, S
 import Viewport from './components/Viewport'
 import { buildConstruction, generateDome, type Build, type Dome } from './geodesic'
 import { pieceColors } from './lib/palette'
-import { DEFAULT_VIEW, readHash, useStored, writeHash, type Focus, type Settings, type ViewOptions } from './lib/state'
+import { dimsOf, type Focus, type Settings, type Tab, type ViewOptions } from './lib/state'
+import { absorbSharedLink, settingsAtom, tabAtom, viewAtom } from './lib/store'
 import { sceneColors, useTheme, type SceneColors } from './lib/theme'
 import { area, deg, fmt, len, type Unit } from './lib/units'
 
-type Tab = 'struts' | 'panels' | 'hubs' | 'schema' | 'parts' | 'sheets'
 const TAB_OF: Record<NonNullable<Focus>['kind'], Tab> = { strut: 'struts', face: 'panels', hub: 'hubs' }
 
 const sameFocus = (a: Focus, b: Focus) => a?.kind === b?.kind && a?.index === b?.index
 
 export default function App() {
-  const [settings, setSettings] = useState<Settings>(readHash)
+  // Every option persists in local storage (lib/store); a shared link replaces them once, on open.
+  const [settings, setSettings] = useAtom(settingsAtom)
   const [pref, setPref, scheme] = useTheme()
-  const [view, setView] = useStored<ViewOptions>('geodesic.view.v4', DEFAULT_VIEW)
+  const [view, setView] = useAtom(viewAtom)
   const [selected, setSelected] = useState<Focus>(null)
   const [hover, setHoverState] = useState<Focus>(null)
-  const [tab, setTab] = useState<Tab>('struts')
+  const [tab, setTab] = useAtom(tabAtom)
   const [resetSignal, setResetSignal] = useState(0)
 
   // The model reports every pointer move; only a change of family re-renders.
@@ -49,12 +52,13 @@ export default function App() {
   }, [])
 
   const set = (s: Partial<Settings>) => setSettings((old) => ({ ...old, ...s }))
-  useEffect(() => writeHash(settings), [settings])
+  // A share link pasted into the address bar while the app is open.
   useEffect(() => {
-    const onHash = () => setSettings(readHash())
+    const onHash = () => absorbSharedLink()
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+  const dims = dimsOf(settings)
 
   const dome = useMemo(
     () =>
@@ -81,8 +85,8 @@ export default function App() {
   }, [dome])
 
   const build = useMemo(
-    () => buildConstruction(dome, settings.technique, settings.dims, settings.unit),
-    [dome, settings.technique, settings.dims, settings.unit],
+    () => buildConstruction(dome, settings.technique, dims, settings.unit),
+    [dome, settings.technique, dims, settings.unit],
   )
   // A construction has its parts; the primitive has its families. Sheets belong to both.
   const shownTab: Tab = build ? (tab === 'sheets' ? 'sheets' : 'parts') : tab === 'parts' ? 'struts' : tab
@@ -105,6 +109,7 @@ export default function App() {
         <span className="font-semibold">Geodesic</span>
         <span className="hidden truncate text-[13px] text-muted-foreground md:block">{summary}</span>
         <div className="ml-auto flex items-center gap-2">
+          <ShareButton settings={settings} view={view} />
           <Export dome={dome} unit={unit} build={build} />
           <Segmented
             label="Theme"
@@ -118,6 +123,7 @@ export default function App() {
           />
         </div>
       </header>
+      <ShareNoticeBar />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         <aside className="scroll-thin shrink-0 space-y-7 border-b p-4 lg:w-[300px] lg:overflow-y-auto lg:border-r lg:border-b-0">
@@ -152,10 +158,10 @@ export default function App() {
         <aside className="flex shrink-0 flex-col border-t lg:w-[420px] lg:border-t-0 lg:border-l">
           <TechniquePicker
             technique={settings.technique}
-            dims={settings.dims}
+            dims={dims}
             unit={unit}
             warnings={build?.warnings ?? []}
-            onChange={(technique, dims) => set({ technique, dims })}
+            onChange={(technique, next) => setSettings((old) => ({ ...old, technique, dimsBy: next === undefined ? old.dimsBy : { ...old.dimsBy, [technique]: next } }))}
           />
           <Tabs
             value={shownTab}

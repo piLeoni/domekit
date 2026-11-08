@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { defaultDims, TECHNIQUES, type BaseSolid, type CutMode, type Pattern, type Technique } from '../geodesic'
+import { TECHNIQUES, type BaseSolid, type CutMode, type Pattern, type Technique } from '../geodesic'
 import { UNITS, type Unit } from './units'
 
 export interface Settings {
@@ -15,8 +14,12 @@ export interface Settings {
   triangulate: boolean
   /** How it is built: the primitive alone, or a construction technique. */
   technique: Technique
-  /** The technique's material dimensions, millimetres; missing keys take the defaults. */
-  dims: Record<string, number>
+  /**
+   * Each technique's material dimensions, millimetres, kept separately so
+   * switching technique and back keeps what was set. Missing keys take the
+   * defaults.
+   */
+  dimsBy: Partial<Record<Technique, Record<string, number>>>
 }
 
 export const MAX_FREQUENCY = 12
@@ -31,14 +34,14 @@ export const DEFAULT_SETTINGS: Settings = {
   mode: 'exclude',
   triangulate: false,
   technique: 'primitive',
-  dims: {},
+  dimsBy: {},
 }
-
-const MODES: Record<string, CutMode> = { ex: 'exclude', in: 'include', sec: 'section' }
-const MODE_KEYS = Object.fromEntries(Object.entries(MODES).map(([k, v]) => [v, k])) as Record<CutMode, string>
 
 /** What is lit in the viewport and the tables: one family, or none. */
 export type Focus = { kind: 'strut' | 'face' | 'hub'; index: number } | null
+
+export type Tab = 'struts' | 'panels' | 'hubs' | 'schema' | 'parts' | 'sheets'
+export const TABS: Tab[] = ['struts', 'panels', 'hubs', 'schema', 'parts', 'sheets']
 
 export interface ViewOptions {
   /** Which families carry colour in the model. */
@@ -61,82 +64,61 @@ export const DEFAULT_VIEW: ViewOptions = {
   decking: false,
 }
 
-/** The dome lives in the URL fragment, so a link opens the same dome. */
-export function readHash(): Settings {
-  const q = new URLSearchParams(location.hash.slice(1))
-  const num = (k: string, d: number) => {
-    const v = Number(q.get(k))
-    return q.has(k) && Number.isFinite(v) ? v : d
-  }
-  const unit = q.get('u') as Unit
+/* ---------------------------------------------------------------- */
+/*  Cleaning: whatever comes from storage or a link, made valid      */
+/* ---------------------------------------------------------------- */
+
+const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
+const num = (v: unknown, d: number, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d)
+const oneOf = <T>(v: unknown, options: readonly T[], d: T): T => (options.includes(v as T) ? (v as T) : d)
+const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d)
+
+const PATTERNS: Pattern[] = ['geodesic', 'goldberg']
+const SOLIDS: BaseSolid[] = ['icosahedron', 'octahedron']
+const MODES: CutMode[] = ['exclude', 'include', 'section']
+const TECHNIQUE_IDS = TECHNIQUES.map((t) => t.id)
+
+/** A technique's dimensions: only its own keys, each within its limits. */
+export function cleanDims(technique: Technique, raw: unknown): Record<string, number> {
+  const spec = TECHNIQUES.find((t) => t.id === technique)
+  if (!spec || !isObject(raw)) return {}
+  const out: Record<string, number> = {}
+  for (const d of spec.dims) if (typeof raw[d.key] === 'number' && Number.isFinite(raw[d.key])) out[d.key] = num(raw[d.key], d.mm, d.min, d.max)
+  return out
+}
+
+export function cleanSettings(raw: unknown): Settings {
+  const r = isObject(raw) ? raw : {}
+  const D = DEFAULT_SETTINGS
+  const dimsBy: Settings['dimsBy'] = {}
+  if (isObject(r.dimsBy)) for (const t of TECHNIQUE_IDS) if (r.dimsBy[t] !== undefined) dimsBy[t] = cleanDims(t, r.dimsBy[t])
   return {
-    pattern: q.get('p') === 'gb' ? 'goldberg' : 'geodesic',
-    frequency: Math.round(Math.min(MAX_FREQUENCY, Math.max(1, num('v', DEFAULT_SETTINGS.frequency)))),
-    solid: q.get('s') === 'octa' ? 'octahedron' : 'icosahedron',
-    radius: Math.max(0.001, num('r', DEFAULT_SETTINGS.radius)),
-    unit: UNITS.includes(unit) ? unit : DEFAULT_SETTINGS.unit,
-    cut: Math.min(1, Math.max(0.001, num('h', DEFAULT_SETTINGS.cut))),
-    mode: MODES[q.get('m') ?? ''] ?? DEFAULT_SETTINGS.mode,
-    triangulate: q.get('tri') === '1',
-    ...readTechnique(q.get('t'), q.get('d')),
+    pattern: oneOf(r.pattern, PATTERNS, D.pattern),
+    frequency: Math.round(num(r.frequency, D.frequency, 1, MAX_FREQUENCY)),
+    solid: oneOf(r.solid, SOLIDS, D.solid),
+    radius: num(r.radius, D.radius, 0.001, 1e6),
+    unit: oneOf(r.unit, UNITS, D.unit),
+    cut: num(r.cut, D.cut, 0.001, 1),
+    mode: oneOf(r.mode, MODES, D.mode),
+    triangulate: bool(r.triangulate, D.triangulate),
+    technique: oneOf(r.technique, TECHNIQUE_IDS, D.technique),
+    dimsBy,
   }
 }
 
-/** `t=plates&d=plate:6,circle:60`: the technique, and only the dimensions that differ from its defaults. */
-function readTechnique(t: string | null, d: string | null): Pick<Settings, 'technique' | 'dims'> {
-  const spec = TECHNIQUES.find((x) => x.id === t)
-  if (!spec) return { technique: 'primitive', dims: {} }
-  const dims: Record<string, number> = {}
-  for (const pair of (d ?? '').split(',')) {
-    const [k, v] = pair.split(':')
-    const dim = spec.dims.find((x) => x.key === k)
-    const n = Number(v)
-    if (dim && Number.isFinite(n)) dims[k] = Math.min(dim.max, Math.max(dim.min, n))
+export function cleanView(raw: unknown): ViewOptions {
+  const r = isObject(raw) ? raw : {}
+  const D = DEFAULT_VIEW
+  return {
+    colorBy: oneOf(r.colorBy, ['struts', 'panels'] as const, D.colorBy),
+    labels: bool(r.labels, D.labels),
+    explode: num(r.explode, D.explode, 0, 1),
+    look: oneOf(r.look, ['material', 'type'] as const, D.look),
+    decking: bool(r.decking, D.decking),
   }
-  return { technique: spec.id, dims }
 }
 
-function writeTechnique(s: Settings): Record<string, string> {
-  if (s.technique === 'primitive') return {}
-  const def = defaultDims(s.technique)
-  const d = Object.entries(s.dims)
-    .filter(([k, v]) => k in def && v !== def[k])
-    .map(([k, v]) => `${k}:${Number(v.toFixed(4))}`)
-    .join(',')
-  return d ? { t: s.technique, d } : { t: s.technique }
-}
+export const cleanTab = (raw: unknown): Tab => oneOf(raw, TABS, 'struts')
 
-export function writeHash(s: Settings) {
-  const q = new URLSearchParams({
-    p: s.pattern === 'goldberg' ? 'gb' : 'geo',
-    v: String(s.frequency),
-    s: s.solid === 'octahedron' ? 'octa' : 'icosa',
-    r: String(s.radius),
-    u: s.unit,
-    h: String(Number(s.cut.toFixed(8))),
-    m: MODE_KEYS[s.mode],
-    ...(s.triangulate ? { tri: '1' } : {}),
-    ...writeTechnique(s),
-  })
-  history.replaceState(null, '', `#${q}`)
-}
-
-/** A value kept in localStorage, for per-viewer conveniences only. */
-export function useStored<T>(key: string, initial: T): [T, (v: T) => void] {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const raw = localStorage.getItem(key)
-      return raw == null ? initial : { ...initial, ...JSON.parse(raw) }
-    } catch {
-      return initial
-    }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value))
-    } catch {
-      /* private mode: keep it for this visit */
-    }
-  }, [key, value])
-  return [value, setValue]
-}
+/** The current technique's dimensions. */
+export const dimsOf = (s: Settings) => s.dimsBy[s.technique] ?? {}

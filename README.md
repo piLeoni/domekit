@@ -110,7 +110,7 @@ printed at 1:1 on its page.
 
 The right column starts with a dropdown of techniques: **Primitive** (the
 geometry alone), or one of nine ways to build it, each with its own material
-dimensions (millimetres, or inches for imperial domes; kept in the link):
+dimensions (millimetres, or inches for imperial domes; kept per technique, so switching back finds them as you left them):
 
 | Technique | Parts | Dimensions |
 |---|---|---|
@@ -171,9 +171,37 @@ src/
     step.ts         STEP AP214 writer for those solids
   components/       React UI: ui.tsx (controls), Viewport (react-three-fiber),
                     Taxonomy (tables, spectrum, schema), Construction
-                    (technique, dimensions, parts), Sheets, Controls, Stats, Export
-  lib/              palette, theme, units, URL state
+                    (technique, dimensions, parts), Sheets, Controls, Stats,
+                    Export, Share
+  lib/              palette, theme, units; state.ts (settings and their
+                    cleaning), store.ts (Jotai atoms in localStorage),
+                    share.ts (versioned share links)
 ```
+
+## State and sharing
+
+Every option (the dome, the construction and each technique's dimensions,
+the view, the open tab) lives in Jotai atoms kept in `localStorage`: leave and
+come back, and it is as you left it. The URL stays clean.
+
+**Share** copies a link, `…/#share=<payload>`: one JSON document, deflated and
+base64url-encoded, holding the dome, the construction with every dimension
+(defaults included, so the link stands alone) and the view:
+
+```json
+{ "app": "geodesic", "v": 1,
+  "dome": { "pattern": "geodesic", "frequency": 2, "solid": "icosahedron", "radius": 3,
+            "unit": "m", "cut": 0.6, "mode": "section", "triangulate": false },
+  "build": { "technique": "lapped", "dims": { "thickness": 1.5, "lap": 40, "…": "…" } },
+  "view": { "colorBy": "struts", "labels": false, "explode": 0, "look": "type", "decking": false } }
+```
+
+Opening a link applies it (with an Undo), then removes it from the address
+bar. Every value is checked and clamped on the way in. `v` is the format
+version: a link newer than the app, or older than `MIN_SHARE_VERSION`, is
+refused with a message rather than half-applied. To change the format
+incompatibly, bump `SHARE_VERSION` and add a step to `MIGRATIONS` in
+`src/lib/share.ts`. The old `#p=…&v=…` links still open, as version 0.
 
 The UI only calls `generateDome(params): Dome`. To move the geometry to Rust,
 build a WASM module that returns the same `Dome` shape (flat arrays for
