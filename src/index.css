@@ -76,8 +76,38 @@
   button {
     cursor: pointer;
   }
+  /* A fixed 14px thumb, so marks under the track can sit exactly at its stops. */
   input[type='range'] {
-    accent-color: var(--primary);
+    appearance: none;
+    height: 14px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--input);
+  }
+  input[type='range']::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--input);
+  }
+  input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: none;
+  }
+  input[type='range']::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: none;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
@@ -110,4 +140,11 @@
 }
 .fade-in {
   animation: fade-in 180ms ease-out;
+}
+
+/* Drawing previews: the printable page, fit to the card. */
+.sheet-preview svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }

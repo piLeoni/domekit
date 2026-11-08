@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { toCutList, toHubList, toJson, toObj, type Dome } from '../geodesic'
 import type { Unit } from '../lib/units'
+import { saveSheets } from './Sheets'
 import { DownloadIcon, Menu, MenuItem } from './ui'
 
 function save(name: string, text: string, type: string) {
@@ -27,6 +28,16 @@ export default function Export({ dome, unit }: { dome: Dome; unit: Unit }) {
     >
       {(close) => (
         <>
+          <MenuItem hint=".pdf" onClick={() => (void saveSheets(dome, unit, 'pdf'), close())}>
+            Drawings, printable
+          </MenuItem>
+          <MenuItem hint=".zip" onClick={() => (void saveSheets(dome, unit, 'svg'), close())}>
+            Drawings, SVG full size
+          </MenuItem>
+          <MenuItem hint=".zip" onClick={() => (void saveSheets(dome, unit, 'dxf'), close())}>
+            Drawings, DXF full size
+          </MenuItem>
+          <div className="my-1 border-t" />
           <MenuItem hint=".csv" onClick={() => (save(`${stem}-cutlist.csv`, toCutList(dome, unit), 'text/csv'), close())}>
             Cut list
           </MenuItem>

@@ -5,4 +5,5 @@
  */
 export { generateDome, flatCuts, subdivide, letter } from './generate'
 export { toObj, toCutList, toHubList, toJson } from './export'
+export { buildSheets, pageSize, type Sheet, type LengthUnit } from './sheets'
 export * from './types'

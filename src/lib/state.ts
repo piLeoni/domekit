@@ -34,10 +34,13 @@ export type Focus = { kind: 'strut' | 'face' | 'hub'; index: number } | null
 export interface ViewOptions {
   /** Which families carry colour in the model. */
   colorBy: 'struts' | 'panels'
+  /** Type labels on the model, for the family carrying colour. */
+  labels: boolean
 }
 
 export const DEFAULT_VIEW: ViewOptions = {
   colorBy: 'struts',
+  labels: false,
 }
 
 /** The dome lives in the URL fragment, so a link opens the same dome. */

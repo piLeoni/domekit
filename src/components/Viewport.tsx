@@ -315,6 +315,90 @@ function HubMarks({ dome, scene, focus }: Pick<Props, 'dome' | 'scene' | 'focus'
   )
 }
 
+/**
+ * Type labels on the model, drawn on a 2D canvas laid over it: one per strut
+ * (at its middle) or per panel (at its centre), for whichever family carries
+ * colour. Labels on the far side are skipped, and where two would overlap the
+ * nearer one wins. Redrawn only when the camera or the content changes.
+ */
+function Labels({ dome, scene, view, focus, overlay }: Pick<Props, 'dome' | 'scene' | 'view' | 'focus'> & { overlay: React.RefObject<HTMLCanvasElement | null> }) {
+  const camera = useThree((s) => s.camera)
+  const size = useThree((s) => s.size)
+  const items = useMemo(() => {
+    const at = placer(dome)
+    const centre = new Vector3(0, -(1 + lowest(dome)) / 2, 0)
+    const make = (p: Vector3, type: number, text: string) => ({ p, n: p.clone().sub(centre).normalize(), type, text })
+    if (view.colorBy === 'struts') {
+      return dome.struts.map((s) => make(at(dome.vertices[s.a]).add(at(dome.vertices[s.b])).multiplyScalar(0.5), s.type, dome.strutTypes[s.type].label))
+    }
+    return dome.faces.map((f) => {
+      const c = f.v.reduce((acc, v) => acc.add(at(dome.vertices[v])), new Vector3()).multiplyScalar(1 / f.v.length)
+      return make(c, f.type, dome.faceTypes[f.type].label)
+    })
+  }, [dome, view.colorBy])
+
+  const dirty = useRef(true)
+  useEffect(() => {
+    dirty.current = true
+  }, [items, focus, scene, view.labels, size])
+  const lastCam = useRef('')
+
+  useFrame(() => {
+    const c = overlay.current
+    if (!c) return
+    const camKey = camera.matrixWorld.elements.map((x) => x.toFixed(5)).join()
+    if (!dirty.current && camKey === lastCam.current) return
+    dirty.current = false
+    lastCam.current = camKey
+    const dpr = window.devicePixelRatio || 1
+    const { width: w, height: h } = size
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr)
+      c.height = Math.round(h * dpr)
+    }
+    const g = c.getContext('2d')!
+    g.setTransform(dpr, 0, 0, dpr, 0, 0)
+    g.clearRect(0, 0, w, h)
+    if (!view.labels) return
+    const kind = view.colorBy === 'struts' ? 'strut' : 'face'
+    const camPos = camera.position
+    const v = new Vector3()
+    const shown = items
+      .filter((it) => it.n.dot(v.copy(camPos).sub(it.p)) > 0)
+      .map((it) => {
+        v.copy(it.p).project(camera)
+        return { it, x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, z: v.z }
+      })
+      .sort((a, b) => a.z - b.z)
+    g.font = '600 11px ui-sans-serif, system-ui, -apple-system, sans-serif'
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.lineJoin = 'round'
+    g.lineWidth = 3
+    g.strokeStyle = scene.background
+    // A coarse grid of taken cells keeps labels from piling up.
+    const cell = 14
+    const taken = new Set<string>()
+    for (const { it, x, y } of shown) {
+      const tw = g.measureText(it.text).width + 4
+      const cx0 = Math.floor((x - tw / 2) / cell)
+      const cx1 = Math.floor((x + tw / 2) / cell)
+      const cy = Math.floor(y / cell)
+      let free = true
+      for (let cx = cx0; cx <= cx1 && free; cx++) if (taken.has(`${cx},${cy}`)) free = false
+      if (!free) continue
+      for (let cx = cx0; cx <= cx1; cx++) taken.add(`${cx},${cy}`)
+      const on = !focus || focus.kind !== kind || focus.index === it.type
+      g.globalAlpha = on ? 1 : scene.scheme === 'dark' ? 0.45 : 0.3
+      g.strokeText(it.text, x, y)
+      g.fillStyle = scene.foreground
+      g.fillText(it.text, x, y)
+    }
+    g.globalAlpha = 1
+  })
+  return null
+}
+
 /** The cut plane's trace on the sphere, dashed. */
 function CutRing({ dome, scene }: Pick<Props, 'dome' | 'scene'>) {
   const points = useMemo(() => {
@@ -373,12 +457,14 @@ function Camera({ resetSignal }: { resetSignal: number }) {
 
 export default function Viewport(props: Props) {
   const { dome, scene, onSelect } = props
+  const overlay = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onSelect(null)
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
   }, [onSelect])
   return (
+    <div className="relative h-full w-full">
     <Canvas
       camera={{ position: HOME.toArray(), fov: 35, near: 0.01, far: 100 }}
       dpr={[1, 2]}
@@ -393,6 +479,9 @@ export default function Viewport(props: Props) {
       <Ground dome={dome} scene={scene} />
       <OrbitControls makeDefault enableDamping minDistance={1.2} maxDistance={10} />
       <Camera resetSignal={props.resetSignal} />
+      <Labels dome={dome} scene={scene} view={props.view} focus={props.focus} overlay={overlay} />
     </Canvas>
+    <canvas ref={overlay} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
+    </div>
   )
 }

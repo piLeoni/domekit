@@ -74,6 +74,31 @@ others (the first eight are a validated colour-blind-safe order; the rest are
 picked furthest-first in OKLab). With many types some hues come close, so the
 label always names the type.
 
+## Drawings
+
+The **Sheets** tab (and Export → Drawings) gives one drawing per part type,
+in three forms:
+
+- **PDF, printable**: a page per part, all the same size (A4, or US Letter
+  for imperial domes): header with label and quantity, the part scaled to
+  fit with its annotations, a data table, and a footer with a true scale bar
+  and the scale ratio. First page: the parts list and the face schema.
+- **SVG, full size** (zip): each part at 1:1, 1 unit = 1 mm (1 inch for
+  imperial domes), with its notes and a 100 mm (4 in) check bar. Layers
+  `outline` (red, cut), `marks` (blue), `text`.
+- **DXF, full size** (zip): the same as DXF R12, layers `OUTLINE`, `MARKS`,
+  `TEXT`, units in the header.
+
+What each part shows:
+- **Panels**: true shape seen from outside; per side its strut, length and
+  bevel (half the angle to the neighbouring panel); each corner's angle.
+- **Struts**: length hub centre to hub centre, angle at each end; cut pieces
+  show the slanted end at the base plane.
+- **Hubs**: a template of the arms at their true turns, with dips (arm length
+  nominal: the hub's size comes with the construction technique).
+
+No nesting: lay parts out in your own tool.
+
 ## Interface
 
 Parameters on the left, the model in the middle, the taxonomy on the right
@@ -81,6 +106,7 @@ Parameters on the left, the model in the middle, the taxonomy on the right
 are a faint fill that pushes back the struts behind them. Hover any type, in a
 table or in the model, to light it everywhere; click to select it (Esc or a
 click on empty space clears). Picking in the model opens the matching tab.
+The Labels toggle writes each strut's (or panel's) type on the model.
 Highlights ease in and out over about 200 ms; what is not in focus recedes
 less in dark mode, where faded lines would otherwise vanish.
 

@@ -96,9 +96,16 @@ export default function Controls({ settings, set }: { settings: Settings; set: (
           aria-label="Frequency"
           onChange={(e) => set({ frequency: Number(e.target.value) })}
         />
-        <div className="num flex justify-between px-0.5 text-[10px] text-muted-foreground">
+        {/* Each number centred under its thumb stop: the thumb's centre runs from 7px to 100% − 7px. */}
+        <div className="num relative h-3.5 text-[10px] text-muted-foreground">
           {Array.from({ length: MAX_FREQUENCY }, (_, i) => (
-            <span key={i}>{i + 1}</span>
+            <span
+              key={i}
+              className={`absolute -translate-x-1/2 ${i + 1 === settings.frequency ? 'font-medium text-foreground' : ''}`}
+              style={{ left: `calc(7px + (100% - 14px) * ${i / (MAX_FREQUENCY - 1)})` }}
+            >
+              {i + 1}
+            </span>
           ))}
         </div>
       </Field>

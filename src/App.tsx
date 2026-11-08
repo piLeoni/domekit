@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Controls from './components/Controls'
 import Export from './components/Export'
+import Sheets from './components/Sheets'
 import Stats from './components/Stats'
 import { FaceSchema, HubTable, PanelTable, rowId, StrutSpectrum, StrutTable, type Pick } from './components/Taxonomy'
 import { Button, GeodesicIcon, MonitorIcon, MoonIcon, SectionTitle, Segmented, SunIcon, Tabs, XIcon, FocusIcon } from './components/ui'
@@ -11,7 +12,7 @@ import { DEFAULT_VIEW, readHash, useStored, writeHash, type Focus, type Settings
 import { sceneColors, useTheme, type SceneColors } from './lib/theme'
 import { area, deg, fmt, len, type Unit } from './lib/units'
 
-type Tab = 'struts' | 'panels' | 'hubs' | 'schema'
+type Tab = 'struts' | 'panels' | 'hubs' | 'schema' | 'sheets'
 const TAB_OF: Record<NonNullable<Focus>['kind'], Tab> = { strut: 'struts', face: 'panels', hub: 'hubs' }
 
 const sameFocus = (a: Focus, b: Focus) => a?.kind === b?.kind && a?.index === b?.index
@@ -41,7 +42,8 @@ export default function App() {
   const selectFromModel = useCallback((f: Focus) => {
     setSelected(f)
     if (!f) return
-    setTab(TAB_OF[f.kind])
+    // On the Sheets tab, stay: the sheet scrolls into view by itself.
+    setTab((t) => (t === 'sheets' ? t : TAB_OF[f.kind]))
     requestAnimationFrame(() => document.getElementById(rowId(f.kind, f.index))?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   }, [])
 
@@ -146,6 +148,7 @@ export default function App() {
               { id: 'panels', label: 'Panels', count: dome.faceTypes.filter((t) => t.count).length },
               { id: 'hubs', label: 'Hubs', count: dome.hubTypes.length },
               { id: 'schema', label: 'Schema' },
+              { id: 'sheets', label: 'Sheets' },
             ]}
           />
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3" onMouseLeave={() => setHover(null)}>
@@ -158,6 +161,7 @@ export default function App() {
             {tab === 'panels' && <PanelTable dome={dome} strutColors={strutColors} faceColors={faceColors} pick={pick} unit={unit} />}
             {tab === 'hubs' && <HubTable dome={dome} strutColors={strutColors} pick={pick} />}
             {tab === 'schema' && <FaceSchema dome={dome} colors={strutColors} pick={pick} />}
+            {tab === 'sheets' && <Sheets dome={dome} unit={unit} pick={pick} />}
           </div>
         </aside>
       </div>
@@ -177,6 +181,15 @@ function ViewToolbar({ view, setView, onReset }: { view: ViewOptions; setView: (
           { value: 'panels', label: 'Panels' },
         ]}
       />
+      <Button
+        variant="ghost"
+        aria-pressed={view.labels}
+        className={view.labels ? 'bg-accent' : ''}
+        onClick={() => setView({ ...view, labels: !view.labels })}
+        title={`Show ${view.colorBy === 'struts' ? 'strut' : 'panel'} labels on the model`}
+      >
+        Labels
+      </Button>
       <Button variant="ghost" size="icon" onClick={onReset} title="Reset view" aria-label="Reset view">
         <FocusIcon className="h-4 w-4" />
       </Button>
