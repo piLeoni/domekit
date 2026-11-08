@@ -1,16 +1,60 @@
 # DomeKit
 
-A geodesic dome generator, live at https://domekit.pietro-leoni.workers.dev
-(and https://pileoni.github.io/domekit/). Pick a frequency (V), a radius and a cut height; get
-the dome in 3D with its taxonomy: strut types, hub types, panel types, the face
-schema, and the cut list.
+**Design a geodesic dome, then get everything you need to build it.**
+Pick a pattern, a frequency, a radius and where to cut the sphere; DomeKit
+classifies every strut, panel and hub, then turns the dome into real parts for
+one of nine construction techniques, with drawings, cut lists and a 3D model.
+
+**Open it: https://pileoni.github.io/domekit/** (runs entirely in the browser,
+nothing to install).
+
+![DomeKit: a 2V dome cut at 0.6, built as timber struts on steel star hubs](docs/images/timber.png)
+
+## Highlights
+
+- **Geodesic or Goldberg**, icosahedron or octahedron, 1V to 12V, cut at any
+  height: keep whole pieces, or trim them flat at the plane (optionally keeping
+  every trimmed panel a triangle).
+- **Taxonomy**: strut, panel and hub types, with chord factors, angles at
+  every end, and mirror pairs.
+- **Nine ways to build it**: sheet panels, folded or lapped sheet metal,
+  single and double mitre timber, Good Karma frames, flattened pipe, plate hubs,
+  and timber on star hubs. Each with its own dimensions, parts list, hardware and
+  warnings when the numbers don't work.
+- **Drawings for every part**: printable PDF with a scale bar, plus full-size
+  SVG and DXF for cutting; STEP for CAD; OBJ, CSV cut and hub lists, JSON.
+- **Remembers everything** between visits, and **Share** makes one link that
+  opens your exact dome, construction and dimensions anywhere.
+
+## Gallery
+
+| | |
+|---|---|
+| ![The primitive: struts by type, with the strut spectrum and table](docs/images/primitive.png) | ![Goldberg: flat pentagons and hexagons](docs/images/goldberg.png) |
+| **Primitive**: 3V geodesic, struts coloured by type | **Goldberg**: the dual, flat pentagons and hexagons |
+| ![Good Karma frames, exploded](docs/images/frames.png) | ![Folded sheet-metal flanges, exploded, with the Sheets tab](docs/images/sheets.png) |
+| **Good Karma**: a 2×6 frame per face, exploded | **Folded flanges**: sheet-metal panels and their drawings |
+| ![Lapped flanges with a double overlap](docs/images/lapped.png) | ![Timber on star hubs in dark mode](docs/images/dark.png) |
+| **Lapped flanges**: double overlap, bolted on the fold | **Dark mode** |
+
+Every part type gets a drawing sheet:
+
+| | |
+|---|---|
+| ![A folded-flange panel: flat pattern with bend lines, fold angles and holes](docs/images/sheet-folded.png) | ![A star hub: fins at their true turns and angles](docs/images/sheet-hub.png) |
+
+## Run it locally
 
 ```sh
 npm install
 npm run dev        # http://localhost:5173
-npm test           # geometry tests (vitest)
+npm test           # geometry, construction and share-link tests (vitest)
 npm run build      # type-check + production bundle in dist/
 ```
+
+Every push to `main` is tested, built and deployed to GitHub Pages
+(`.github/workflows/pages.yml`). The build uses relative paths, so `dist/` can
+be served from any folder or host.
 
 ## What it generates
 
@@ -156,6 +200,10 @@ click on empty space clears). Picking in the model opens the matching tab.
 The Labels toggle writes each strut's (or panel's) type on the model.
 Highlights ease in and out over about 200 ms; what is not in focus recedes
 less in dark mode, where faded lines would otherwise vanish.
+
+The header has **Share** (copies a link to this exact dome, see below),
+**Export** (every download), the theme (light, system, dark) and a link to this
+repository.
 
 ## Layout
 
