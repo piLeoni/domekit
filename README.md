@@ -58,9 +58,9 @@ published tables (e.g. 3V: 0.34862 / 0.40355 / 0.41241); see
 `src/geodesic/generate.test.ts`.
 
 Each hub type lists its **arms** counter-clockwise seen from outside: the strut
-type, its **dip** below the tangent plane (for cut points: its rise above the cut
-plane), the **turn** around the hub axis to the next arm, and the true 3D angle
-**between** neighbouring struts. Two hubs with the same struts in a different
+type, its **dip** below the tangent plane, the **turn** around the hub axis to the next arm, and the true 3D angle
+**between** neighbouring struts. Every node's axis is the sphere radius, cut
+points included: the dome is never squared off to the ground plane. Two hubs with the same struts in a different
 order, or at different angles, are different connectors; a type that is another's
 mirror image (same arms, opposite hand) is marked as its pair. The hub list
 export has one row per arm.
@@ -92,12 +92,51 @@ in three forms:
 What each part shows:
 - **Panels**: true shape seen from outside; per side its strut, length and
   bevel (half the angle to the neighbouring panel); each corner's angle.
-- **Struts**: length hub centre to hub centre, angle at each end; cut pieces
-  show the slanted end at the base plane.
+- **Struts**: length node to node, square ends; the angle at each end (and,
+  for cut pieces, where they meet the base plane) as data only: how an end
+  is finished belongs to the construction, not the primitive.
 - **Hubs**: a template of the arms at their true turns, with dips (arm length
   nominal: the hub's size comes with the construction technique).
 
-No nesting: lay parts out in your own tool.
+No nesting: lay parts out in your own tool. A part small enough to fit is
+printed at 1:1 on its page.
+
+## Construction
+
+The right column starts with a dropdown of techniques: **Primitive** (the
+geometry alone), or one of five ways to build it, each with its own material
+dimensions (millimetres, or inches for imperial domes; kept in the link):
+
+| Technique | Parts | Dimensions |
+|---|---|---|
+| **Sheet panels** | hubless sheet panels, edges cut toward the dome centre so neighbours meet flush; outer and inner face, bevel per side | sheet thickness |
+| **Flattened pipe** | tubes with flattened, drilled, bent ends, stacked on one bolt per node: cut length, hole to hole, bend at each end | tube Ø and wall, flat length, hole to end, bolt Ø |
+| **Single mitre** | one timber strut per edge, shared by its two faces; each end cut to a point (two mitres meeting on the node axis), so the struts meet tip to tip; ridged top under the decking | decking thickness, strut width and depth |
+| **Double mitre** | a frame per face, so every edge is two struts side by side, bevelled to sit face to face and bolted through; frame corners mitred (compound) | decking thickness, beam width and depth, bolt Ø, bolts per side |
+| **Good Karma** | as double, but frame corners butted in a pinwheel: each beam runs through its start corner, the next butts into it; 2×6, glued and screwed, decking glued and nailed (8d ring-shank at 4″), four 3/8″ bolts per side | same, 2×6 by default |
+| **Plate hubs** | a flat plate per node, tangent to the sphere, holes on a circle; tubes with flattened, bent ends bolt under it | plate thickness, hole distance from centre, plate edge, and the tube's |
+| **Timber on star hubs** | square-cut timber struts standing radial, a saw kerf in each end, slotted over steel fins welded to a tube at each node and bolted through; the fins carry the angles | beam width and depth, tube Ø, fin length and thickness, gap, bolt Ø |
+
+Each technique gives:
+- the parts list (Parts tab) and hardware, with warnings when the numbers
+  do not work (a flat too short to clear its hole, holes crowding on a plate,
+  a sheet too thick for its panels);
+- the model as shaded solids in type colours (frame beams take their
+  strut's colour, so double struts and corner joints show), or plain
+  off-white with the **Colours** button off; a **Decking** toggle shows the decking over
+  the frames (off by default; the exports always have it); hover and select
+  as for the primitive, with
+  an **Explode** slider that pulls the parts apart (a strut with its ends, a
+  hub with its fins, sheathing off its frame) to show how they fit;
+- drawings of every part type (PDF, SVG, DXF): tubes laid flat with an
+  enlarged end detail, plates seen from outside, panels with both faces;
+- **STEP** (Export → Parts, 3D): every part as a closed solid, placed, in
+  millimetres; opens as separate bodies in FreeCAD, Fusion, SolidWorks,
+  Onshape, Rhino. Round parts are 16-sided prisms.
+
+Sizes are for the parts as modelled: sharp bends, no bend allowance, and
+for pipe the bend of a tab mid-stack (where a tab sits in the stack moves
+its bend by a fraction of a degree). Make one of each before the batch.
 
 ## Interface
 
@@ -119,8 +158,13 @@ src/
     generate.ts     subdivide → cut → classify → measure
     types.ts        the Dome shape the UI consumes
     export.ts       OBJ, CSV cut list, JSON
+    sheets.ts       drawings: shapes → SVG, DXF, printable pages
+    build.ts        construction techniques → parts, drawings, solids
+    solid.ts        closed polyhedral solids (prism, cylinder, slab)
+    step.ts         STEP AP214 writer for those solids
   components/       React UI: ui.tsx (controls), Viewport (react-three-fiber),
-                    Taxonomy (tables, spectrum, schema), Controls, Stats, Export
+                    Taxonomy (tables, spectrum, schema), Construction
+                    (technique, dimensions, parts), Sheets, Controls, Stats, Export
   lib/              palette, theme, units, URL state
 ```
 

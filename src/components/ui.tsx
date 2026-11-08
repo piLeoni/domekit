@@ -46,6 +46,55 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
   )
 }
 
+/** A number field that keeps what is being typed and commits only valid values. */
+export function NumberField({
+  value,
+  onCommit,
+  min,
+  max,
+  digits,
+  label,
+  className,
+}: {
+  value: number
+  onCommit: (v: number) => void
+  min: number
+  max: number
+  digits: number
+  label: string
+  className?: string
+}) {
+  const shown = String(Number(value.toFixed(digits)))
+  const [text, setText] = useState(shown)
+  // Follow the value from outside (the linked field, the slider), but never while typing here.
+  const editing = useRef(false)
+  useEffect(() => {
+    if (!editing.current) setText(shown)
+  }, [shown])
+  return (
+    <Input
+      className={className}
+      type="number"
+      inputMode="decimal"
+      min={min}
+      max={max}
+      step="any"
+      value={text}
+      aria-label={label}
+      onChange={(e) => {
+        setText(e.target.value)
+        const v = Number(e.target.value)
+        if (e.target.value !== '' && Number.isFinite(v) && v >= min && v <= max) onCommit(v)
+      }}
+      onFocus={() => (editing.current = true)}
+      onBlur={() => {
+        editing.current = false
+        setText(shown)
+      }}
+    />
+  )
+}
+
 export function Select({ className, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
@@ -170,7 +219,7 @@ export function Menu({ label, children, align = 'right' }: { label: ReactNode; c
       {open && (
         <div
           role="menu"
-          className={cx('absolute top-full z-50 mt-1 min-w-48 rounded-md border bg-card p-1 shadow-[var(--shadow)]', align === 'right' ? 'right-0' : 'left-0')}
+          className={cx('absolute top-full z-50 mt-1 min-w-64 rounded-md border bg-card p-1 shadow-[var(--shadow)]', align === 'right' ? 'right-0' : 'left-0')}
         >
           {children(() => setOpen(false))}
         </div>

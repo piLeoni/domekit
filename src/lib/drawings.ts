@@ -3,7 +3,7 @@
  * in folders), or one PDF of same-size printable pages.
  */
 import { strToU8, zipSync } from 'fflate'
-import { pageSize, toCutList, toHubList, type Dome, type LengthUnit, type Sheet } from '../geodesic'
+import { pageSize, partsCsv, toCutList, toHubList, type Build, type Dome, type LengthUnit, type Sheet } from '../geodesic'
 
 const FOLDER: Record<Sheet['kind'], string> = { overview: '', panel: 'panels/', strut: 'struts/', hub: 'hubs/' }
 
@@ -24,12 +24,30 @@ Struts: length hub centre to hub centre. Hub arms: nominal length, true angles.
 cutlist.csv and hubs.csv hold the same numbers as tables.
 `
 
-export function sheetsZip(dome: Dome, sheets: Sheet[], unit: LengthUnit, ext: 'svg' | 'dxf'): Blob {
-  const files: Record<string, Uint8Array> = {
-    'README.txt': strToU8(README(sheets.find((s) => s.kind !== 'overview')?.units ?? 'mm', ext)),
-    'cutlist.csv': strToU8(toCutList(dome, unit)),
-    'hubs.csv': strToU8(toHubList(dome)),
-  }
+const BUILD_README = (units: string, ext: string) => `Geodesic dome: construction drawings
+
+One ${ext.toUpperCase()} per part type, at true scale: 1 unit = 1 ${units}.
+Layers: ${ext === 'dxf' ? 'OUTLINE (red, cut), MARKS (blue: bends, bevels, dimensions), TEXT' : 'outline (red, cut), marks (blue: bends, bevels, dimensions), text (black)'}
+
+struts/  tubes, laid flat: cut length, flattened ends, holes, bend lines.
+panels/  panels seen from outside: outer face solid, inner face dashed.
+hubs/    plates seen from outside, with their holes.
+
+Sizes are for the parts as modelled (sharp bends, no bend allowance).
+Make one of each and check it before cutting the batch.
+
+parts.csv lists every part and the hardware.
+`
+
+export function sheetsZip(dome: Dome, sheets: Sheet[], unit: LengthUnit, ext: 'svg' | 'dxf', build?: Build | null): Blob {
+  const units = sheets.find((s) => s.kind !== 'overview')?.units ?? 'mm'
+  const files: Record<string, Uint8Array> = build
+    ? { 'README.txt': strToU8(BUILD_README(units, ext)), 'parts.csv': strToU8(partsCsv(build)) }
+    : {
+        'README.txt': strToU8(README(units, ext)),
+        'cutlist.csv': strToU8(toCutList(dome, unit)),
+        'hubs.csv': strToU8(toHubList(dome)),
+      }
   for (const s of sheets) {
     if (ext === 'dxf' && !s.dxf) continue
     files[sheetPath(s, ext)] = strToU8(ext === 'svg' ? s.svg : s.dxf)

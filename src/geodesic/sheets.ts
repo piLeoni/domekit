@@ -11,6 +11,7 @@
  *   imperial domes): header, the part scaled to fit, its data table, and a
  *   footer with a true scale bar.
  */
+import type { Build } from './build'
 import type { Dome, FaceType, HubType, StrutType } from './types'
 import { cross, dot, normalize, sub } from './vec'
 
@@ -36,8 +37,8 @@ export interface Sheet {
   page: string
 }
 
-const TO_MM: Record<LengthUnit, number> = { m: 1000, cm: 10, mm: 1, ft: 304.8, in: 25.4 }
-const imperialUnit = (u: LengthUnit) => u === 'ft' || u === 'in'
+export const TO_MM: Record<LengthUnit, number> = { m: 1000, cm: 10, mm: 1, ft: 304.8, in: 25.4 }
+export const imperialUnit = (u: LengthUnit) => u === 'ft' || u === 'in'
 
 /** The page every PDF sheet shares, in millimetres, landscape. */
 export const pageSize = (unit: LengthUnit) => (imperialUnit(unit) ? { w: 279.4, h: 215.9, name: 'Letter' } : { w: 297, h: 210, name: 'A4' })
@@ -59,7 +60,7 @@ type Shape =
   | { t: 'text'; at: P; s: string; size: number; anchor: 'start' | 'middle' | 'end'; middle: boolean; weight: number; rotate: number; tone: Tone }
 
 /** Coordinates run x right, y down (as in SVG); angles are as seen. */
-class Drawing {
+export class Drawing {
   shapes: Shape[] = []
   minX = Infinity
   minY = Infinity
@@ -266,9 +267,9 @@ function dxfDocument(d: Drawing, units: 'mm' | 'in'): string {
 /*  Words and numbers                                                */
 /* ---------------------------------------------------------------- */
 
-const deg = (x: number) => `${x.toFixed(2)}°`
-const fmtLen = (x: number, unit: LengthUnit) => `${x.toFixed({ m: 4, cm: 2, mm: 1, ft: 4, in: 3 }[unit])} ${unit}`
-const fileSafe = (s: string) => s.replace(/′/g, 'p').replace(/[^A-Za-z0-9_-]/g, '_')
+export const deg = (x: number) => `${x.toFixed(2)}°`
+export const fmtLen = (x: number, unit: LengthUnit) => `${x.toFixed({ m: 4, cm: 2, mm: 1, ft: 4, in: 3 }[unit])} ${unit}`
+export const fileSafe = (s: string) => s.replace(/′/g, 'p').replace(/[^A-Za-z0-9_-]/g, '_')
 const POLY = (m: number) => ({ 3: 'triangle', 4: 'quad', 5: 'pentagon', 6: 'hexagon' })[m] ?? `${m}-gon`
 
 function domeLine(dome: Dome, unit: LengthUnit) {
@@ -277,7 +278,7 @@ function domeLine(dome: Dome, unit: LengthUnit) {
 }
 
 /** A part's facts: the page's data table, and the 1:1 sheet's notes. */
-interface Facts {
+export interface Facts {
   title: string
   kind: string
   /** Rows of [key, value]; a row with no value is a heading. */
@@ -458,15 +459,15 @@ function drawStrut(d: Drawing, t: StrutType, k: number, th: number, unit: Length
 }
 
 function hubFacts(dome: Dome, t: HubType): Facts {
-  const rise = t.kind === 'cut' ? 'Rise' : 'Dip'
+  const rise = 'Dip'
   return {
     title: t.label,
     kind: t.kind === 'cut' ? 'Cut point on the base plane' : `Hub · ${t.valence}-way${t.base ? ' · on the base' : ''}`,
     rows: [
       ['Quantity', String(t.count)],
       ...(t.mirrorOf != null ? ([['Mirror of', dome.hubTypes[t.mirrorOf].label]] as [string, string][]) : []),
-      ['Seen', `from outside, down the ${t.kind === 'cut' ? 'vertical' : 'sphere radius'}`],
-      [rise, t.kind === 'cut' ? 'above the base plane' : 'below the tangent plane'],
+      ['Seen', 'from outside, down the sphere radius'],
+      [rise, 'below the tangent plane'],
       ['Turn', 'around the axis to the next arm'],
     ],
     table: {
@@ -487,7 +488,7 @@ function drawHub(d: Drawing, t: HubType, a: number, th: number) {
     d.line('outline', [dir[0] * a * 0.06, dir[1] * a * 0.06], [dir[0] * a, dir[1] * a], { weight: 2 })
     const lab: P = [dir[0] * (a * 1.06 + th * 2.6), dir[1] * (a * 1.06 + th * 2.6)]
     d.text([lab[0], lab[1] - th * 0.4], `${i + 1} · ${arm.strut}`, th * 1.05, { anchor: 'middle', middle: true, weight: 700 })
-    d.text([lab[0], lab[1] + th * 1.4], `${t.kind === 'cut' ? 'rise' : 'dip'} ${deg(arm.dip)}`, th * 0.8, { anchor: 'middle', middle: true, tone: 'accent' })
+    d.text([lab[0], lab[1] + th * 1.4], `dip ${deg(arm.dip)}`, th * 0.8, { anchor: 'middle', middle: true, tone: 'accent' })
     if (t.arms.length > 1) {
       const rr = a * 0.38
       d.arc([0, 0], rr, theta, theta + arm.turn)
@@ -563,8 +564,8 @@ const BAR_IN = [0.5, 1, 2, 6, 12, 24, 36, 48, 120, 240].map((x) => x * 25.4)
 
 const barLabel = (mmLen: number, unit: LengthUnit) => {
   if (imperialUnit(unit)) {
-    const inches = mmLen / 25.4
-    return inches >= 12 ? `${inches / 12} ft` : `${inches} in`
+    const inches = Math.round((mmLen / 25.4) * 100) / 100
+    return inches >= 12 ? `${Math.round((inches / 12) * 100) / 100} ft` : `${inches} in`
   }
   return mmLen >= 1000 ? `${mmLen / 1000} m` : `${mmLen} mm`
 }
@@ -572,7 +573,7 @@ const barLabel = (mmLen: number, unit: LengthUnit) => {
 /** A tidy ratio: 1:12.5, 1:8, 1:250. */
 const ratio = (s: number) => {
   const r = 1 / s
-  return r >= 10 ? `1:${Math.round(r)}` : r >= 1 ? `1:${r.toFixed(1).replace(/\.0$/, '')}` : `${(1 / r).toFixed(1)}:1`
+  return r >= 10 ? `1:${Math.round(r)}` : r >= 2 ? `1:${r.toFixed(1).replace(/\.0$/, '')}` : r >= 1 ? `1:${r.toFixed(2).replace(/\.?0+$/, '')}` : `${(1 / r).toFixed(1)}:1`
 }
 
 const PAGE_TH = 2.3 // body text cap height, mm
@@ -607,8 +608,11 @@ function pageFrame(ctx: PageCtx, title: string, qty: string, kind: string) {
 function factsColumn(d: Drawing, f: Facts, x: number, y: number, w: number) {
   const row = PAGE_TH * 2.05
   let yy = y
+  const wide = (s: string) => s.length * PAGE_TH * 0.68
   for (const [k, v] of f.rows) {
     d.text([x, yy], k, PAGE_TH, { tone: 'muted' })
+    // A value too long to share the line with its key goes on the next.
+    if (v && wide(k) + wide(v) + 3 > w) yy += row * 0.85
     if (v) d.text([x + w, yy], v, PAGE_TH, { anchor: 'end' })
     yy += row
   }
@@ -643,23 +647,27 @@ function partPage(ctx: PageCtx, f: Facts, qty: string, draw: (k: number, th: num
   d.line('marks', [body.x1 - colW - 5, body.y0 - 2], [body.x1 - colW - 5, body.y1], { weight: 1.5, color: '#e4e4e7' })
   // Fit the drawing, leaving room for the notes drawn around it.
   const pad = PAGE_TH * 9
-  const s = Math.min((box.x1 - box.x0 - pad) / extent.w, (box.y1 - box.y0 - pad) / extent.h)
-  const part = draw(s, PAGE_TH)
-  // Shrink further if the notes still spill over.
-  const pw = part.maxX - part.minX
-  const ph = part.maxY - part.minY
-  const fit = Math.min(1, (box.x1 - box.x0) / pw, (box.y1 - box.y0) / ph)
-  const final = fit < 1 ? draw(s * fit * 0.98, PAGE_TH) : part
+  // Never enlarged: a part that fits prints at full size.
+  const s = Math.min(1 / TO_MM.mm, (box.x1 - box.x0 - pad) / extent.w, (box.y1 - box.y0 - pad) / extent.h)
+  // Shrink further while the notes still spill over: text keeps its size, so check again.
+  let sf = s
+  let final = draw(sf, PAGE_TH)
+  for (let i = 0; i < 6; i++) {
+    const fit = Math.min(1, (box.x1 - box.x0) / (final.maxX - final.minX), (box.y1 - box.y0) / (final.maxY - final.minY))
+    if (fit >= 1) break
+    sf *= fit * 0.98
+    final = draw(sf, PAGE_TH)
+  }
   d.place(final, (box.x0 + box.x1) / 2 - (final.minX + final.maxX) / 2, (box.y0 + box.y1) / 2 - (final.minY + final.maxY) / 2)
   // Footer: a bar of a round length, and the scale it was drawn at.
-  const sf = fit < 1 ? s * fit * 0.98 : s
   if (nominal) {
     d.text([M, H - M - 3], 'Template: arm length nominal, angles true', PAGE_TH, { tone: 'muted' })
   } else {
     const choices = imperialUnit(ctx.unit) ? BAR_IN : BAR_MM
     const real = choices.find((c) => c * sf >= 25) ?? choices[choices.length - 1]
     scaleBar(d, [M, H - M - 7.5], real * sf, 1.8, PAGE_TH, barLabel(real, ctx.unit))
-    d.text([M + real * sf + 6, H - M - 5.6], `Scale ${ratio(sf)} · for full size use the SVG or DXF`, PAGE_TH, { tone: 'muted' })
+    const note = sf > 0.9999 ? 'full size when printed at 100%' : 'for full size use the SVG or DXF'
+    d.text([M + real * sf + 6, H - M - 5.6], `Scale ${sf > 0.9999 ? '1:1' : ratio(sf)} · ${note}`, PAGE_TH, { tone: 'muted' })
   }
   return svgDocument(svgShapes(d, PRINT), 0, 0, pageSize(ctx.unit).w, pageSize(ctx.unit).h, 'mm')
 }
@@ -724,7 +732,8 @@ function overviewPage(ctx: PageCtx) {
 /* ---------------------------------------------------------------- */
 
 /** Every sheet for a dome: the overview, then each panel, strut and hub type in use. */
-export function buildSheets(dome: Dome, unit: LengthUnit): Sheet[] {
+export function buildSheets(dome: Dome, unit: LengthUnit, build?: Build | null): Sheet[] {
+  if (build) return constructionSheets(dome, unit, build)
   const bevels = panelBevels(dome)
   const { k, mm } = drawingUnits(unit)
   const kPage = TO_MM[unit] // dome length → page millimetres, before scaling
@@ -795,6 +804,69 @@ export function buildSheets(dome: Dome, unit: LengthUnit): Sheet[] {
       return d
     }, { w: 230, h: 230 }, true)
     out.push({ id: `hub-${fileSafe(t.label)}`, kind: 'hub', label: t.label, index: t.index, qty: t.count, ...fullSize(part, f, dome, unit, th), page: pageSvg })
+  }
+  return out
+}
+
+/** The first page of a construction: its parts by kind, the hardware, and the dimensions it was built with. */
+function constructionOverview(ctx: PageCtx, build: Build, title: string) {
+  const { d, body } = pageFrame(ctx, title, `${build.parts.reduce((s, p) => s + p.qty, 0)} parts`, 'Every part, with its count; each has its own page')
+  const row = PAGE_TH * 2.05
+  const maxRows = Math.floor((body.y1 - body.y0 - row * 3) / row)
+  const groups = [...new Set(build.parts.map((p) => p.name))]
+  const colW = 64
+  groups.forEach((name, gi) => {
+    const x = body.x0 + gi * (colW + 8)
+    const items = build.parts.filter((p) => p.name === name)
+    d.text([x, body.y0 + 2], name.endsWith('ing') ? name : `${name}s`, PAGE_TH * 1.1, { weight: 700 })
+    let y = body.y0 + 2 + row * 1.3
+    d.line('marks', [x, y - row * 0.6], [x + colW, y - row * 0.6], { weight: 1.5, color: '#d4d4d8' })
+    const shown = items.length > maxRows ? items.slice(0, maxRows - 1) : items
+    for (const p of shown) {
+      d.text([x, y + row * 0.4], p.label, PAGE_TH, { weight: 700 })
+      d.text([x + 12, y + row * 0.4], `× ${p.qty}`, PAGE_TH, { tone: 'muted' })
+      d.text([x + colW, y + row * 0.4], p.spec.split(' · ')[0], PAGE_TH, { anchor: 'end' })
+      y += row
+    }
+    if (shown.length < items.length) d.text([x, y + row * 0.4], `+ ${items.length - shown.length} more`, PAGE_TH * 0.9, { tone: 'muted' })
+  })
+  const x = body.x0 + groups.length * (colW + 8)
+  const w = Math.min(body.x1 - x, 90)
+  const facts: Facts = {
+    title: '',
+    kind: '',
+    rows: [
+      ['Built with', ''],
+      ...build.dimRows.map(([k, v]) => [k, imperialUnit(build.unit) ? `${(v / 25.4).toFixed(3)} in` : `${v} mm`] as [string, string]),
+      ...(build.hardware.length ? ([['Hardware', '']] as [string, string][]) : []),
+      ...build.hardware.map((h) => [`${h.qty} × ${h.label}`, h.spec.split(',')[0]] as [string, string]),
+    ],
+  }
+  factsColumn(d, facts, x, body.y0 + 2, w)
+  build.warnings.forEach((t, i) => d.text([body.x0, body.y1 - (build.warnings.length - i) * row], `! ${t}`, PAGE_TH * 0.9, { tone: 'accent' }))
+  return svgDocument(svgShapes(d, PRINT), 0, 0, pageSize(ctx.unit).w, pageSize(ctx.unit).h, 'mm')
+}
+
+/** Sheets for a construction: an overview, then a page per part type. */
+function constructionSheets(dome: Dome, unit: LengthUnit, build: Build): Sheet[] {
+  const { k, mm } = drawingUnits(unit)
+  const kPage = TO_MM[unit]
+  const pages = 1 + build.parts.length
+  let page = 1
+  const overview = constructionOverview({ dome, unit, page: 1, pages }, build, 'Parts')
+  const out: Sheet[] = [
+    { id: 'overview', kind: 'overview', label: 'Overview', index: -1, qty: 1, width: pageSize(unit).w, height: pageSize(unit).h, units: 'mm', svg: overview, dxf: '', page: overview },
+  ]
+  for (const p of build.parts) {
+    const th = textHeight(Math.max(p.size.w, p.size.h * 2) * k * 0.6, mm)
+    const part = new Drawing()
+    p.draw(part, k, th, true)
+    const pageSvg = partPage({ dome, unit, page: ++page, pages }, p.facts, `× ${p.qty}`, (s, th2) => {
+      const d = new Drawing()
+      p.draw(d, kPage * s, th2, false)
+      return d
+    }, { w: p.size.w * kPage, h: p.size.h * kPage })
+    out.push({ id: p.id, kind: p.kind, label: p.label, index: p.index, qty: p.qty, ...fullSize(part, p.facts, dome, unit, th), page: pageSvg })
   }
   return out
 }

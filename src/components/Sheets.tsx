@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { buildSheets, type Dome, type Sheet } from '../geodesic'
+import { buildSheets, type Build, type Dome, type Sheet } from '../geodesic'
 import { download, sheetPath, sheetsPdf, sheetsZip } from '../lib/drawings'
 import type { Focus } from '../lib/state'
 import type { Unit } from '../lib/units'
@@ -10,25 +10,25 @@ const FOCUS_KIND: Record<Sheet['kind'], NonNullable<Focus>['kind'] | null> = { o
 
 export const sheetDomId = (kind: NonNullable<Focus>['kind'], index: number) => `sheet-${kind}-${index}`
 
-export function fileStem(dome: Dome, unit: Unit) {
+export function fileStem(dome: Dome, unit: Unit, build?: Build | null) {
   const p = dome.params
-  return `dome-${p.pattern === 'goldberg' ? 'goldberg' : 'geodesic'}-${p.frequency}v-${String(p.radius).replace('.', '_')}${unit}-${p.mode}`
+  return `dome-${p.pattern === 'goldberg' ? 'goldberg' : 'geodesic'}-${p.frequency}v-${String(p.radius).replace('.', '_')}${unit}-${p.mode}${build ? `-${build.technique}` : ''}`
 }
 
 export type DrawingFormat = 'svg' | 'dxf' | 'pdf'
 
 /** Build the drawings and save them: a zip of 1:1 SVGs or DXFs, or a PDF of pages. */
-export async function saveSheets(dome: Dome, unit: Unit, as: DrawingFormat, sheets = buildSheets(dome, unit)) {
-  if (as === 'pdf') download(`${fileStem(dome, unit)}-drawings.pdf`, await sheetsPdf(sheets, unit))
-  else download(`${fileStem(dome, unit)}-${as}.zip`, sheetsZip(dome, sheets, unit, as))
+export async function saveSheets(dome: Dome, build: Build | null, unit: Unit, as: DrawingFormat, sheets = buildSheets(dome, unit, build)) {
+  if (as === 'pdf') download(`${fileStem(dome, unit, build)}-drawings.pdf`, await sheetsPdf(sheets, unit))
+  else download(`${fileStem(dome, unit, build)}-${as}.zip`, sheetsZip(dome, sheets, unit, as, build))
 }
 
 /**
  * One card per sheet: the drawing itself, at a size that fits, with a fixed
  * on-screen line weight (the files keep their hairlines for cutters).
  */
-export default function Sheets({ dome, unit, pick }: { dome: Dome; unit: Unit; pick: Pick }) {
-  const sheets = useMemo(() => buildSheets(dome, unit), [dome, unit])
+export default function Sheets({ dome, build, unit, pick }: { dome: Dome; build: Build | null; unit: Unit; pick: Pick }) {
+  const sheets = useMemo(() => buildSheets(dome, unit, build), [dome, unit, build])
   const [busy, setBusy] = useState<DrawingFormat | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -42,7 +42,7 @@ export default function Sheets({ dome, unit, pick }: { dome: Dome; unit: Unit; p
     setBusy(as)
     setError(null)
     try {
-      await saveSheets(dome, unit, as, sheets)
+      await saveSheets(dome, build, unit, as, sheets)
     } catch (e) {
       setError(`Could not build the ${as.toUpperCase()}: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -105,7 +105,7 @@ export default function Sheets({ dome, unit, pick }: { dome: Dome; unit: Unit; p
                       onClick={(e) => {
                         e.stopPropagation()
                         const body = ext === 'svg' ? (s.kind === 'overview' ? s.page : s.svg) : s.dxf
-                        download(`${fileStem(dome, unit)}-${s.id}.${ext}`, new Blob([body], { type: ext === 'svg' ? 'image/svg+xml' : 'application/dxf' }))
+                        download(`${fileStem(dome, unit, build)}-${s.id}.${ext}`, new Blob([body], { type: ext === 'svg' ? 'image/svg+xml' : 'application/dxf' }))
                       }}
                     >
                       {ext}

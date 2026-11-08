@@ -558,9 +558,9 @@ export function generateDome(params: DomeParams): Dome {
   /** The arms of node v, counter-clockwise seen from outside, unrotated. */
   const armsAt = (v: number): HubArm[] => {
     const p = vertices[v]
-    // A hub's axis is the sphere's radius; a cut point's is the plane's normal.
-    const n: Vec3 = nodeKind[v] === 'cut' ? [0, 0, 1] : normalize(p)
-    const sign = nodeKind[v] === 'cut' ? 1 : -1
+    // Every node's axis is the sphere's radius, cut points included.
+    const n: Vec3 = normalize(p)
+    const sign = -1
     const ref = Math.abs(n[2]) < 0.9 ? ([0, 0, 1] as Vec3) : ([1, 0, 0] as Vec3)
     const e1 = normalize(sub(ref, scale(n, dot(ref, n))))
     const e2 = cross(n, e1)

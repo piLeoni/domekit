@@ -1,57 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
 import type { CutMode } from '../geodesic'
 import { MAX_FREQUENCY, type Settings } from '../lib/state'
 import { len, UNITS, type Unit } from '../lib/units'
-import { Field, Input, Segmented, Select } from './ui'
-
-/** A number field that keeps what is being typed and commits only valid values. */
-function NumberField({
-  value,
-  onCommit,
-  min,
-  max,
-  digits,
-  label,
-  className,
-}: {
-  value: number
-  onCommit: (v: number) => void
-  min: number
-  max: number
-  digits: number
-  label: string
-  className?: string
-}) {
-  const shown = String(Number(value.toFixed(digits)))
-  const [text, setText] = useState(shown)
-  // Follow the value from outside (the linked field, the slider), but never while typing here.
-  const editing = useRef(false)
-  useEffect(() => {
-    if (!editing.current) setText(shown)
-  }, [shown])
-  return (
-    <Input
-      className={className}
-      type="number"
-      inputMode="decimal"
-      min={min}
-      max={max}
-      step="any"
-      value={text}
-      aria-label={label}
-      onChange={(e) => {
-        setText(e.target.value)
-        const v = Number(e.target.value)
-        if (e.target.value !== '' && Number.isFinite(v) && v >= min && v <= max) onCommit(v)
-      }}
-      onFocus={() => (editing.current = true)}
-      onBlur={() => {
-        editing.current = false
-        setText(shown)
-      }}
-    />
-  )
-}
+import { Field, NumberField, Segmented, Select } from './ui'
 
 const MODES: { id: CutMode; title: string; text: string }[] = [
   { id: 'exclude', title: 'Exclude', text: 'Keep only what lies wholly above the plane.' },

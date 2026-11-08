@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { PartsList, TechniquePicker } from './components/Construction'
 import Controls from './components/Controls'
 import Export from './components/Export'
 import Sheets from './components/Sheets'
@@ -6,13 +7,13 @@ import Stats from './components/Stats'
 import { FaceSchema, HubTable, PanelTable, rowId, StrutSpectrum, StrutTable, type Pick } from './components/Taxonomy'
 import { Button, GeodesicIcon, MonitorIcon, MoonIcon, SectionTitle, Segmented, SunIcon, Tabs, XIcon, FocusIcon } from './components/ui'
 import Viewport from './components/Viewport'
-import { generateDome, type Dome } from './geodesic'
+import { buildConstruction, generateDome, type Build, type Dome } from './geodesic'
 import { pieceColors } from './lib/palette'
 import { DEFAULT_VIEW, readHash, useStored, writeHash, type Focus, type Settings, type ViewOptions } from './lib/state'
 import { sceneColors, useTheme, type SceneColors } from './lib/theme'
 import { area, deg, fmt, len, type Unit } from './lib/units'
 
-type Tab = 'struts' | 'panels' | 'hubs' | 'schema' | 'sheets'
+type Tab = 'struts' | 'panels' | 'hubs' | 'schema' | 'parts' | 'sheets'
 const TAB_OF: Record<NonNullable<Focus>['kind'], Tab> = { strut: 'struts', face: 'panels', hub: 'hubs' }
 
 const sameFocus = (a: Focus, b: Focus) => a?.kind === b?.kind && a?.index === b?.index
@@ -20,7 +21,7 @@ const sameFocus = (a: Focus, b: Focus) => a?.kind === b?.kind && a?.index === b?
 export default function App() {
   const [settings, setSettings] = useState<Settings>(readHash)
   const [pref, setPref, scheme] = useTheme()
-  const [view, setView] = useStored<ViewOptions>('geodesic.view.v3', DEFAULT_VIEW)
+  const [view, setView] = useStored<ViewOptions>('geodesic.view.v4', DEFAULT_VIEW)
   const [selected, setSelected] = useState<Focus>(null)
   const [hover, setHoverState] = useState<Focus>(null)
   const [tab, setTab] = useState<Tab>('struts')
@@ -43,7 +44,7 @@ export default function App() {
     setSelected(f)
     if (!f) return
     // On the Sheets tab, stay: the sheet scrolls into view by itself.
-    setTab((t) => (t === 'sheets' ? t : TAB_OF[f.kind]))
+    setTab((t) => (t === 'sheets' || t === 'parts' ? t : TAB_OF[f.kind]))
     requestAnimationFrame(() => document.getElementById(rowId(f.kind, f.index))?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   }, [])
 
@@ -78,6 +79,13 @@ export default function App() {
     setHoverState(null)
   }, [dome])
 
+  const build = useMemo(
+    () => buildConstruction(dome, settings.technique, settings.dims, settings.unit),
+    [dome, settings.technique, settings.dims, settings.unit],
+  )
+  // A construction has its parts; the primitive has its families. Sheets belong to both.
+  const shownTab: Tab = build ? (tab === 'sheets' ? 'sheets' : 'parts') : tab === 'parts' ? 'struts' : tab
+
   const [scene, setScene] = useState<SceneColors>(() => sceneColors(scheme))
   useLayoutEffect(() => setScene(sceneColors(scheme)), [scheme])
 
@@ -96,7 +104,7 @@ export default function App() {
         <span className="font-semibold">Geodesic</span>
         <span className="hidden truncate text-[13px] text-muted-foreground md:block">{summary}</span>
         <div className="ml-auto flex items-center gap-2">
-          <Export dome={dome} unit={unit} />
+          <Export dome={dome} unit={unit} build={build} />
           <Segmented
             label="Theme"
             value={pref}
@@ -125,6 +133,7 @@ export default function App() {
         <main className="relative h-[60vh] shrink-0 bg-viewport lg:h-auto lg:min-w-0 lg:flex-1">
           <Viewport
             dome={dome}
+            build={build}
             scene={scene}
             strutColors={strutColors}
             faceColors={faceColors}
@@ -134,34 +143,49 @@ export default function App() {
             onSelect={selectFromModel}
             resetSignal={resetSignal}
           />
-          <ViewToolbar view={view} setView={setView} onReset={() => setResetSignal((n) => n + 1)} />
-          {selected && <Selection key={`${selected.kind}-${selected.index}`} dome={dome} selected={selected} unit={unit} onClear={() => setSelected(null)} />}
-          {hover && overModel && <Tooltip key={`${hover.kind}-${hover.index}`} focus={hover} dome={dome} unit={unit} />}
+          <ViewToolbar view={view} setView={setView} parts={build != null} decking={!!build?.solids.some((s) => s.name.endsWith('-sheathing'))} onReset={() => setResetSignal((n) => n + 1)} />
+          {selected && <Selection key={`${selected.kind}-${selected.index}`} dome={dome} build={build} selected={selected} unit={unit} onClear={() => setSelected(null)} />}
+          {hover && overModel && <Tooltip key={`${hover.kind}-${hover.index}`} focus={hover} dome={dome} build={build} unit={unit} />}
         </main>
 
         <aside className="flex shrink-0 flex-col border-t lg:w-[420px] lg:border-t-0 lg:border-l">
+          <TechniquePicker
+            technique={settings.technique}
+            dims={settings.dims}
+            unit={unit}
+            warnings={build?.warnings ?? []}
+            onChange={(technique, dims) => set({ technique, dims })}
+          />
           <Tabs
-            value={tab}
+            value={shownTab}
             onChange={setTab}
-            tabs={[
-              { id: 'struts', label: 'Struts', count: dome.strutTypes.filter((t) => t.count).length },
-              { id: 'panels', label: 'Panels', count: dome.faceTypes.filter((t) => t.count).length },
-              { id: 'hubs', label: 'Hubs', count: dome.hubTypes.length },
-              { id: 'schema', label: 'Schema' },
-              { id: 'sheets', label: 'Sheets' },
-            ]}
+            tabs={
+              build
+                ? [
+                    { id: 'parts', label: 'Parts', count: build.parts.length },
+                    { id: 'sheets', label: 'Sheets' },
+                  ]
+                : [
+                    { id: 'struts', label: 'Struts', count: dome.strutTypes.filter((t) => t.count).length },
+                    { id: 'panels', label: 'Panels', count: dome.faceTypes.filter((t) => t.count).length },
+                    { id: 'hubs', label: 'Hubs', count: dome.hubTypes.length },
+                    { id: 'schema', label: 'Schema' },
+                    { id: 'sheets', label: 'Sheets' },
+                  ]
+            }
           />
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3" onMouseLeave={() => setHover(null)}>
-            {tab === 'struts' && (
+            {shownTab === 'parts' && build && <PartsList build={build} colors={{ strut: strutColors, face: faceColors, hub: scene.muted }} pick={pick} />}
+            {shownTab === 'struts' && (
               <div className="space-y-3">
                 <StrutSpectrum dome={dome} colors={strutColors} pick={pick} unit={unit} />
                 <StrutTable dome={dome} colors={strutColors} pick={pick} unit={unit} />
               </div>
             )}
-            {tab === 'panels' && <PanelTable dome={dome} strutColors={strutColors} faceColors={faceColors} pick={pick} unit={unit} />}
-            {tab === 'hubs' && <HubTable dome={dome} strutColors={strutColors} pick={pick} />}
-            {tab === 'schema' && <FaceSchema dome={dome} colors={strutColors} pick={pick} />}
-            {tab === 'sheets' && <Sheets dome={dome} unit={unit} pick={pick} />}
+            {shownTab === 'panels' && <PanelTable dome={dome} strutColors={strutColors} faceColors={faceColors} pick={pick} unit={unit} />}
+            {shownTab === 'hubs' && <HubTable dome={dome} strutColors={strutColors} pick={pick} />}
+            {shownTab === 'schema' && <FaceSchema dome={dome} colors={strutColors} pick={pick} />}
+            {shownTab === 'sheets' && <Sheets dome={dome} build={build} unit={unit} pick={pick} />}
           </div>
         </aside>
       </div>
@@ -169,18 +193,30 @@ export default function App() {
   )
 }
 
-function ViewToolbar({ view, setView, onReset }: { view: ViewOptions; setView: (v: ViewOptions) => void; onReset: () => void }) {
+function ViewToolbar({ view, setView, parts, decking, onReset }: { view: ViewOptions; setView: (v: ViewOptions) => void; parts: boolean; decking: boolean; onReset: () => void }) {
   return (
     <div className="absolute top-3 left-3 flex items-center gap-1 rounded-lg border bg-card/90 p-1 shadow-[var(--shadow)] backdrop-blur">
-      <Segmented
-        label="Colour by"
-        value={view.colorBy}
-        onChange={(colorBy) => setView({ ...view, colorBy })}
-        options={[
-          { value: 'struts', label: 'Struts' },
-          { value: 'panels', label: 'Panels' },
-        ]}
-      />
+      {parts ? (
+        <Button
+          variant="ghost"
+          aria-pressed={view.look !== 'material'}
+          className={view.look !== 'material' ? 'bg-accent' : ''}
+          onClick={() => setView({ ...view, look: view.look === 'material' ? 'type' : 'material' })}
+          title="Every element in its type colour; off, all plain (the type colour shows on hover)"
+        >
+          Colours
+        </Button>
+      ) : (
+        <Segmented
+          label="Colour by"
+          value={view.colorBy}
+          onChange={(colorBy) => setView({ ...view, colorBy })}
+          options={[
+            { value: 'struts', label: 'Struts' },
+            { value: 'panels', label: 'Panels' },
+          ]}
+        />
+      )}
       <Button
         variant="ghost"
         aria-pressed={view.labels}
@@ -190,6 +226,32 @@ function ViewToolbar({ view, setView, onReset }: { view: ViewOptions; setView: (
       >
         Labels
       </Button>
+      {decking && (
+        <Button
+          variant="ghost"
+          aria-pressed={view.decking}
+          className={view.decking ? 'bg-accent' : ''}
+          onClick={() => setView({ ...view, decking: !view.decking })}
+          title="Show the decking over the frames (always in the exports)"
+        >
+          Decking
+        </Button>
+      )}
+      {parts && (
+        <label className="flex items-center gap-2 px-2 text-[13px]" title="Pull the parts apart to see how they fit">
+          Explode
+          <input
+            type="range"
+            className="w-24"
+            min={0}
+            max={1}
+            step={0.01}
+            value={view.explode ?? 0}
+            aria-label="Explode"
+            onChange={(e) => setView({ ...view, explode: Number(e.target.value) })}
+          />
+        </label>
+      )}
       <Button variant="ghost" size="icon" onClick={onReset} title="Reset view" aria-label="Reset view">
         <FocusIcon className="h-4 w-4" />
       </Button>
@@ -198,7 +260,12 @@ function ViewToolbar({ view, setView, onReset }: { view: ViewOptions; setView: (
 }
 
 /** What a family is, in a few lines: the tooltip and the selection card share it. */
-function describe(focus: NonNullable<Focus>, dome: Dome, unit: Unit): { title: string; lines: string[] } {
+function describe(focus: NonNullable<Focus>, dome: Dome, unit: Unit, build: Build | null): { title: string; lines: string[] } {
+  if (build) {
+    const kind = focus.kind === 'face' ? 'panel' : focus.kind
+    const part = build.parts.find((p) => p.kind === kind && p.index === focus.index)
+    if (part) return { title: `${part.name} ${part.label}`, lines: [`${part.qty} pieces`, ...part.spec.split(' · ')] }
+  }
   if (focus.kind === 'strut') {
     const t = dome.strutTypes[focus.index]
     const title =
@@ -238,8 +305,8 @@ function describe(focus: NonNullable<Focus>, dome: Dome, unit: Unit): { title: s
   }
 }
 
-function Selection({ dome, selected, unit, onClear }: { dome: Dome; selected: NonNullable<Focus>; unit: Unit; onClear: () => void }) {
-  const { title, lines } = describe(selected, dome, unit)
+function Selection({ dome, build, selected, unit, onClear }: { dome: Dome; build: Build | null; selected: NonNullable<Focus>; unit: Unit; onClear: () => void }) {
+  const { title, lines } = describe(selected, dome, unit, build)
   return (
     <div className="fade-in absolute top-3 right-3 flex max-w-72 items-start gap-2 rounded-lg border bg-card/95 py-2 pr-1.5 pl-3 shadow-[var(--shadow)] backdrop-blur">
       <div className="min-w-0">
@@ -259,7 +326,7 @@ function Selection({ dome, selected, unit, onClear }: { dome: Dome; selected: No
 }
 
 /** Follows the pointer on its own, so the page does not re-render as it moves. */
-function Tooltip({ focus, dome, unit }: { focus: NonNullable<Focus>; dome: Dome; unit: Unit }) {
+function Tooltip({ focus, dome, build, unit }: { focus: NonNullable<Focus>; dome: Dome; build: Build | null; unit: Unit }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const move = (e: PointerEvent) => {
@@ -272,7 +339,7 @@ function Tooltip({ focus, dome, unit }: { focus: NonNullable<Focus>; dome: Dome;
     window.addEventListener('pointermove', move)
     return () => window.removeEventListener('pointermove', move)
   }, [])
-  const { title, lines } = describe(focus, dome, unit)
+  const { title, lines } = describe(focus, dome, unit, build)
   return (
     <div
       ref={ref}

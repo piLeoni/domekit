@@ -109,9 +109,9 @@ export interface HubArm {
   strut: string
   type: number
   /**
-   * Angle between the strut and the node's reference plane, degrees: the
-   * tangent plane for a hub (positive = the strut dips inward, below it), the
-   * cut plane for a cut point (positive = the strut rises above it).
+   * Angle between the strut and the node's tangent plane (perpendicular to
+   * the sphere radius, cut points included), degrees: positive = the strut
+   * dips inward, below it.
    */
   dip: number
   /** Angle around the node's axis, in the reference plane, from this arm to the next. */

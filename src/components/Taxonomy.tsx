@@ -308,7 +308,6 @@ function HubGlyph({ t, colors, size = 40, labels = false }: { t: HubType; colors
 
 /** The selected hub, arm by arm: what a connector maker needs. */
 function HubDetail({ t, colors, dome }: { t: HubType; colors: string[]; dome: Dome }) {
-  const ref = t.kind === 'cut' ? 'cut plane' : 'tangent plane'
   const cell = 'num px-2 py-1 text-right'
   return (
     <div className="fade-in flex gap-3 border-b bg-muted/40 px-2 py-3">
@@ -318,8 +317,8 @@ function HubDetail({ t, colors, dome }: { t: HubType; colors: string[]; dome: Do
           <thead>
             <tr className="text-muted-foreground">
               <th className="px-2 py-1 text-left font-medium">Arm</th>
-              <th className="px-2 py-1 text-right font-medium" title={t.kind === 'cut' ? 'Angle the strut rises above the cut plane' : 'Angle the strut dips below the tangent plane'}>
-                {t.kind === 'cut' ? 'Rise' : 'Dip'}
+              <th className="px-2 py-1 text-right font-medium" title="Angle the strut dips below the tangent plane">
+                Dip
               </th>
               <th className="px-2 py-1 text-right font-medium" title="Angle around the hub axis to the next arm">
                 Turn
@@ -347,7 +346,7 @@ function HubDetail({ t, colors, dome }: { t: HubType; colors: string[]; dome: Do
           </tbody>
         </table>
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-          Seen from outside down the hub axis ({t.kind === 'cut' ? 'the vertical' : 'the sphere radius'}), arms counter-clockwise from arm 1. {t.kind === 'cut' ? 'Rise' : 'Dip'} is measured from the {ref}; turn is the angle in that plane to the next arm.
+          Seen from outside down the hub axis (the sphere radius), arms counter-clockwise from arm 1. Dip is measured from the tangent plane; turn is the angle in that plane to the next arm.
           {t.mirrorOf != null && ` Mirror image of ${dome.hubTypes[t.mirrorOf].label}: same struts and angles, opposite hand.`}
         </p>
       </div>

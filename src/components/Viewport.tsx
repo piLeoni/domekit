@@ -1,9 +1,9 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Line, OrbitControls } from '@react-three/drei'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import { BufferAttribute, BufferGeometry, CanvasTexture, Color, DoubleSide, PolarGridHelper, Vector3, type Material } from 'three'
+import { BufferAttribute, BufferGeometry, CanvasTexture, Color, DoubleSide, EdgesGeometry, PolarGridHelper, ShapeUtils, Vector2, Vector3, type Material } from 'three'
 import type { LineSegments2 } from 'three-stdlib'
-import type { Dome, Vec3 } from '../geodesic'
+import type { Build, Dome, Material as PartMaterial, Vec3 } from '../geodesic'
 import { fade } from '../lib/palette'
 import type { Focus, ViewOptions } from '../lib/state'
 import type { SceneColors } from '../lib/theme'
@@ -12,6 +12,8 @@ type Kind = NonNullable<Focus>['kind']
 
 interface Props {
   dome: Dome
+  /** The parts of a construction technique; null shows the primitive. */
+  build: Build | null
   scene: SceneColors
   strutColors: string[]
   faceColors: string[]
@@ -276,6 +278,206 @@ function Panels({ dome, scene, faceColors, view, focus, onHover, onSelect }: Pro
   )
 }
 
+/**
+ * The parts of a construction, as shaded solids: struts and panels in their
+ * type's colour (for the family carrying colour), plates and hardware in
+ * neutral tones, crisp edges where faces meet at an angle.
+ */
+function BuildModel({ dome, build, scene, strutColors, faceColors, view, focus, onHover, onSelect }: Props & { build: Build }) {
+  const decking = view.decking ?? false
+  const { geometry, edges, slotOf, slots, base, dirs, edgeBase, edgeDirs } = useMemo(() => {
+    const at = placer(dome)
+    const R = dome.params.radius
+    const place = (p: Vec3) => at([p[0] / R, p[1] / R, p[2] / R])
+    // One slot per family in the model (kind + type), plus one for hardware.
+    const slots: { kind: Kind | null; index: number; material: PartMaterial; tint?: number }[] = []
+    const slotKey = new Map<string, number>()
+    const slotFor = (kind: Kind | null, index: number, material: PartMaterial, tint?: number) => {
+      const key = `${kind}|${index}|${material}|${tint}`
+      let s = slotKey.get(key)
+      if (s == null) {
+        s = slots.length
+        slots.push({ kind, index, material, tint })
+        slotKey.set(key, s)
+      }
+      return s
+    }
+    // Each group moves out along the direction from the sphere centre to its middle.
+    const groupDir = new Map<string, Vector3>()
+    for (const ps of build.solids) {
+      const c = ps.solid.points.reduce((acc, p) => acc.add(new Vector3(p[0], p[2], -p[1])), new Vector3()).multiplyScalar(1 / ps.solid.points.length)
+      groupDir.set(ps.group, (groupDir.get(ps.group) ?? new Vector3()).add(c))
+    }
+    for (const v of groupDir.values()) v.normalize()
+
+    const KIND: Record<'strut' | 'panel' | 'hub', Kind> = { strut: 'strut', panel: 'face', hub: 'hub' }
+    const pos: number[] = []
+    const dir: number[] = []
+    const slotOf: number[] = []
+    const edgePos: number[] = []
+    const edgeDir: number[] = []
+    // Decking over a frame is drawn see-through, last, so the frame shows.
+    const seeThrough = (ps: Build['solids'][number]) => ps.name.endsWith('-sheathing')
+    // Decking is optional in the view; the exports always have it.
+    const shown = build.solids.filter((x) => decking || !seeThrough(x))
+    const ordered = [...shown.filter((x) => !seeThrough(x)), ...shown.filter(seeThrough)]
+    let split = -1
+    for (const ps of ordered) {
+      if (split < 0 && seeThrough(ps)) split = pos.length / 3
+      const slot = slotFor(ps.kind ? KIND[ps.kind] : null, ps.index, ps.material, ps.tint)
+      const pts = ps.solid.points.map(place)
+      const dv = groupDir.get(ps.group)!.clone().multiplyScalar(1 + (ps.lift ?? 0) * 0.25)
+      const start = pos.length
+      for (const face of ps.solid.faces) {
+        let tris: number[][]
+        if (face.length === 1 && face[0].length <= 4) {
+          const l = face[0]
+          tris = Array.from({ length: l.length - 2 }, (_, k) => [l[0], l[k + 1], l[k + 2]])
+        } else {
+          // A face with holes, or a notched one: triangulate in its own plane.
+          const p0 = pts[face[0][0]]
+          const n = new Vector3()
+          const l = face[0]
+          for (let i = 0; i < l.length; i++) {
+            const a = pts[l[i]]
+            const b = pts[l[(i + 1) % l.length]]
+            n.x += (a.y - b.y) * (a.z + b.z)
+            n.y += (a.z - b.z) * (a.x + b.x)
+            n.z += (a.x - b.x) * (a.y + b.y)
+          }
+          n.normalize()
+          const u = pts[l[1]].clone().sub(p0).normalize()
+          const v = n.clone().cross(u)
+          const flat = (i: number) => {
+            const d = pts[i].clone().sub(p0)
+            return new Vector2(d.dot(u), d.dot(v))
+          }
+          const all = face.flat()
+          const idx = ShapeUtils.triangulateShape(face[0].map(flat), face.slice(1).map((h) => h.map(flat)))
+          tris = idx.map((t) => t.map((k) => all[k]))
+        }
+        for (const t of tris) {
+          slotOf.push(slot)
+          for (const i of t) {
+            pos.push(pts[i].x, pts[i].y, pts[i].z)
+            dir.push(dv.x, dv.y, dv.z)
+          }
+        }
+      }
+      // Crisp edges where this solid's faces meet at an angle.
+      const one = new BufferGeometry()
+      one.setAttribute('position', new BufferAttribute(new Float32Array(pos.slice(start)), 3))
+      const e = new EdgesGeometry(one, 25)
+      const ep = e.getAttribute('position').array
+      for (let i = 0; i < ep.length; i += 3) {
+        edgePos.push(ep[i], ep[i + 1], ep[i + 2])
+        edgeDir.push(dv.x, dv.y, dv.z)
+      }
+      one.dispose()
+      e.dispose()
+    }
+    const base = new Float32Array(pos)
+    const g = new BufferGeometry()
+    g.setAttribute('position', new BufferAttribute(base.slice(), 3))
+    g.setAttribute('color', new BufferAttribute(new Float32Array(pos.length), 3))
+    g.computeVertexNormals()
+    if (split < 0) split = pos.length / 3
+    g.addGroup(0, split, 0)
+    g.addGroup(split, pos.length / 3 - split, 1)
+    const edgeBase = new Float32Array(edgePos)
+    const edges = new BufferGeometry()
+    edges.setAttribute('position', new BufferAttribute(edgeBase.slice(), 3))
+    return { geometry: g, edges, slotOf, slots, base, dirs: new Float32Array(dir), edgeBase, edgeDirs: new Float32Array(edgeDir) }
+  }, [dome, build, decking])
+  useLayoutEffect(
+    () => () => {
+      geometry.dispose()
+      edges.dispose()
+    },
+    [geometry, edges],
+  )
+
+  // Pull the parts apart: every group out along its own direction.
+  useLayoutEffect(() => {
+    const k = view.explode * 0.3
+    for (const [g, b, d] of [
+      [geometry, base, dirs],
+      [edges, edgeBase, edgeDirs],
+    ] as const) {
+      const attr = g.getAttribute('position') as BufferAttribute
+      const arr = attr.array as Float32Array
+      for (let i = 0; i < arr.length; i++) arr[i] = b[i] + d[i] * k
+      attr.needsUpdate = true
+      g.computeBoundingSphere()
+    }
+  }, [geometry, edges, base, dirs, edgeBase, edgeDirs, view.explode])
+
+  const palette = useMemo(() => {
+    const dark = scene.scheme === 'dark'
+    // Colours off: every part a plain off-white, hardware a little darker so it still reads.
+    const material: Record<PartMaterial, string> = dark
+      ? { wood: '#c9c7c2', sheet: '#d6d4cf', steel: '#c9c7c2', bolt: '#7d7b77' }
+      : { wood: '#f1efea', sheet: '#f6f5f1', steel: '#f1efea', bolt: '#8a8781' }
+    const typeColor = ({ kind, index, material: m, tint }: (typeof slots)[number]) =>
+      tint != null ? strutColors[tint] : kind === 'strut' ? strutColors[index] : kind === 'face' ? fade(faceColors[index], scene.background, 0.15) : material[m]
+    // Colours off: plain; the family in focus still takes its type colour.
+    const base = slots.map((sl) =>
+      view.look === 'type' || (focus && sl.kind === focus.kind && sl.index === focus.index) ? typeColor(sl) : material[sl.material],
+    )
+    return {
+      on: base.map((c) => new Color(c)),
+      off: base.map((c) => new Color(fade(c, scene.background, recede(scene)))),
+    }
+  }, [slots, scene, strutColors, faceColors, view.look, focus])
+
+  const c = useMemo(() => new Color(), [])
+  useLevels(
+    slots.length,
+    (s) => (slots[s].kind ? lit(focus, slots[s].kind!, slots[s].index) : !focus),
+    focus,
+    (levels) => {
+      const attr = geometry.getAttribute('color') as BufferAttribute
+      slotOf.forEach((s, t) => {
+        c.copy(palette.off[s]).lerp(palette.on[s], levels[s])
+        for (let k = 0; k < 3; k++) attr.setXYZ(t * 3 + k, c.r, c.g, c.b)
+      })
+      attr.needsUpdate = true
+    },
+    [geometry, slotOf, palette],
+  )
+
+  const focusOf = (faceIndex: number | undefined): Focus => {
+    if (faceIndex == null) return null
+    const s = slots[slotOf[faceIndex]]
+    return s?.kind ? { kind: s.kind, index: s.index } : null
+  }
+
+  return (
+    <>
+      <hemisphereLight args={['#ffffff', '#888888', 1.6]} />
+      <directionalLight position={[3, 5, 2]} intensity={1.4} />
+      <mesh
+        geometry={geometry}
+        onPointerMove={(e) => {
+          e.stopPropagation()
+          onHover(focusOf(e.faceIndex ?? undefined))
+        }}
+        onPointerOut={() => onHover(null)}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (isClick(e)) onSelect(focusOf(e.faceIndex ?? undefined))
+        }}
+      >
+        <meshLambertMaterial attach="material-0" vertexColors flatShading side={DoubleSide} />
+        <meshLambertMaterial attach="material-1" vertexColors flatShading side={DoubleSide} transparent opacity={0.38} depthWrite={false} />
+      </mesh>
+      <lineSegments geometry={edges} raycast={() => null}>
+        <lineBasicMaterial color={fade(scene.foreground, scene.background, scene.scheme === 'dark' ? 0.5 : 0.55)} transparent opacity={0.85} />
+      </lineSegments>
+    </>
+  )
+}
+
 /** A small ring texture for marking the hubs of the selected type: no other hubs are drawn. */
 function ringTexture() {
   const c = document.createElement('canvas')
@@ -472,8 +674,14 @@ export default function Viewport(props: Props) {
       style={{ touchAction: 'none' }}
     >
       <color attach="background" args={[scene.background]} />
-      <Panels {...props} />
-      <Struts {...props} />
+      {props.build ? (
+        <BuildModel {...props} build={props.build} />
+      ) : (
+        <>
+          <Panels {...props} />
+          <Struts {...props} />
+        </>
+      )}
       <HubMarks dome={dome} scene={scene} focus={props.focus} />
       <CutRing dome={dome} scene={scene} />
       <Ground dome={dome} scene={scene} />

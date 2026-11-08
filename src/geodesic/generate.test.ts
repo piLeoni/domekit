@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { generateDome, letter, type CutMode, type Dome } from './index'
-import { cross, dot, sub } from './vec'
+import { cross, dot, normalize, sub } from './vec'
 
 type Solid = 'icosahedron' | 'octahedron'
 const dome = (frequency: number, cut: number, mode: CutMode = 'exclude', solid: Solid = 'icosahedron', radius = 1) =>
@@ -206,13 +206,18 @@ describe('hub angles', () => {
     }
   })
 
-  it('cut points: ring struts lie in the plane, the trimmed strut rises from it at its cut angle', () => {
-    const d = dome(3, 0.625, 'section')
-    for (const t of d.hubTypes.filter((t) => t.kind === 'cut')) {
-      for (const a of t.arms) {
-        const s = d.strutTypes[a.type]
-        if (s.kind === 'ring') expect(a.dip).toBeCloseTo(0, 6)
-        if (s.kind === 'cut') expect(a.dip).toBeCloseTo(s.cutAngle!, 6)
+  it('cut points: arms measured from the tangent plane, like every hub (axis = sphere radius)', () => {
+    for (const d of [dome(3, 0.625, 'section'), dome(2, 0.6, 'section'), dome(4, 0.37, 'section')]) {
+      for (const [v, h] of d.hubs.entries()) {
+        if (h.kind !== 'cut') continue
+        const p = d.vertices[v]
+        const n = normalize(p)
+        const expected = d.struts
+          .filter((s) => s.a === v || s.b === v)
+          .map((s) => Math.asin(-dot(normalize(sub(d.vertices[s.a === v ? s.b : s.a], p)), n)) * (180 / Math.PI))
+          .sort((x, y) => x - y)
+        const got = d.hubTypes[h.type].arms.map((a) => a.dip).sort((x, y) => x - y)
+        got.forEach((g, i) => expect(g).toBeCloseTo(expected[i], 6))
       }
     }
   })
